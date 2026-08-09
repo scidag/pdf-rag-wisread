@@ -1,0 +1,24 @@
+# Java
+backend/target/
+*.class
+
+# Node
+frontend/node_modules/
+frontend/.next/
+frontend/dist/
+
+# IDE
+.idea/
+.vscode/
+*.iml
+
+# Env
+.env
+deploy/.env
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Separate cloned prototypes
+prototypes/

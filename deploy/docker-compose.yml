@@ -1,0 +1,34 @@
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: wisread-postgres
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-wisread}
+      POSTGRES_USER: ${POSTGRES_USER:-wisread}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-wisread123}
+    ports:
+      - "${POSTGRES_PORT:-5433}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U wisread"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  minio:
+    image: minio/minio:latest
+    container_name: wisread-minio
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-wisread}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-wisread123}
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - minio_data:/data
+
+volumes:
+  postgres_data:
+  minio_data:
