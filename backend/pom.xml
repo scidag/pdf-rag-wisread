@@ -20,6 +20,7 @@
         <spring-ai-alibaba.version>1.0.0-M6.1</spring-ai-alibaba.version>
         <jjwt.version>0.12.6</jjwt.version>
         <minio.version>8.5.17</minio.version>
+        <pdfbox.version>3.0.8</pdfbox.version>
     </properties>
 
     <dependencies>
@@ -46,7 +47,6 @@
         <dependency>
             <groupId>org.postgresql</groupId>
             <artifactId>postgresql</artifactId>
-            <scope>runtime</scope>
         </dependency>
         <dependency>
             <groupId>org.flywaydb</groupId>
@@ -65,6 +65,11 @@
             <groupId>io.minio</groupId>
             <artifactId>minio</artifactId>
             <version>${minio.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.pdfbox</groupId>
+            <artifactId>pdfbox</artifactId>
+            <version>${pdfbox.version}</version>
         </dependency>
         <dependency>
             <groupId>io.jsonwebtoken</groupId>

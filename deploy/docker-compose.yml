@@ -24,8 +24,8 @@ services:
       MINIO_ROOT_USER: ${MINIO_ROOT_USER:-wisread}
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-wisread123}
     ports:
-      - "9000:9000"
-      - "9001:9001"
+      - "${MINIO_PORT:-9002}:9000"
+      - "${MINIO_CONSOLE_PORT:-9003}:9001"
     volumes:
       - minio_data:/data
 

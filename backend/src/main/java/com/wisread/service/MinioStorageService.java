@@ -2,13 +2,16 @@ package com.wisread.service;
 
 import com.wisread.config.WisreadMinioProperties;
 import io.minio.BucketExistsArgs;
+import io.minio.GetObjectArgs;
 import io.minio.MakeBucketArgs;
 import io.minio.MinioClient;
 import io.minio.PutObjectArgs;
 import io.minio.RemoveObjectArgs;
+import jakarta.annotation.PostConstruct;
 import org.springframework.stereotype.Service;
 
 import java.io.ByteArrayInputStream;
+import java.io.InputStream;
 
 @Service
 public class MinioStorageService {
@@ -19,6 +22,11 @@ public class MinioStorageService {
     public MinioStorageService(MinioClient minioClient, WisreadMinioProperties properties) {
         this.minioClient = minioClient;
         this.properties = properties;
+    }
+
+    @PostConstruct
+    void init() {
+        ensureBucket();
     }
 
     public void ensureBucket() {
@@ -61,6 +69,19 @@ public class MinioStorageService {
             );
         } catch (Exception exception) {
             throw new IllegalStateException("failed to delete object from MinIO", exception);
+        }
+    }
+
+    public byte[] getObject(String key) {
+        try (InputStream stream = minioClient.getObject(
+                GetObjectArgs.builder()
+                        .bucket(properties.getBucket())
+                        .object(key)
+                        .build()
+        )) {
+            return stream.readAllBytes();
+        } catch (Exception exception) {
+            throw new IllegalStateException("failed to read object from MinIO", exception);
         }
     }
 }
