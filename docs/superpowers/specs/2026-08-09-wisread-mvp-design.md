@@ -3,6 +3,9 @@
 > 状态：待评审
 > 日期：2026-08-09
 > 上游文档：需求文档mvp.md
+> 开发进度：M1 ✅ / M2 ✅ / M3 ✅ / M4 ⏳ 进行中 / M5 ⬜ / M6 ⬜
+> 当前分支：feat/wisread-mvp-phase1
+> 最近提交：55f5c86（Phase 2：PDF 上传与向量索引）
 
 ## 1. 背景与目标
 
@@ -441,40 +444,40 @@ Prompt 约定：
 
 ## 16. 实施里程碑
 
-### M1：项目骨架与基础设施
+### M1：项目骨架与基础设施（✅ 已完成）
 
 - 初始化 backend/frontend/deploy
 - Docker Compose：PostgreSQL + pgvector + MinIO
 - Flyway 建表
 - 健康检查接口
 
-### M2：注册登录与鉴权
+### M2：注册登录与鉴权（✅ 已完成）
 
 - 注册、登录、刷新、登出
 - Spring Security + JWT filter
 - 当前用户接口
 
-### M3：上传与索引
+### M3：上传与索引（✅ 已完成，对应 Phase 2）
 
 - 上传校验与 MinIO 保存
 - PDFBox 解析、切块、Embedding、pgvector 写入
 - 文档状态轮询与删除
 
-### M4：问答与引用
+### M4：问答与引用（⏳ 下一步，对应 Phase 3）
 
 - 会话、消息表读写
 - RAG 检索与 Rerank
 - SSE 流式生成
 - 引用解析与 answer_sources
 
-### M5：前端工作台
+### M5：前端工作台（⬜ 未开始）
 
 - 登录页与注册页
 - 上传、文档列表、状态展示
 - 问答、来源卡片、会话切换
 - 空状态与错误处理
 
-### M6：测试与验收
+### M6：测试与验收（⬜ 未开始）
 
 - 20 题验收
 - 性能与安全测试
@@ -488,3 +491,24 @@ Prompt 约定：
 4. 会话存储：MVP 保存历史消息，刷新页面后仍可通过会话列表恢复（此点调整了需求文档 F10 的“刷新清空上下文”，需评审确认）
 5. 单文档多会话：本期实现
 6. 文档上限：每个 user 最多 5 个 PDF，超出后上传返回 400
+
+## 18. 开发进度记录
+
+### 2026-08-09 Phase 1：项目骨架与注册登录
+
+- 提交：`4793fd6 feat: initialize Wisread backend with JWT auth`
+- 完成：git 仓库、Docker Compose、Flyway V1、Spring Boot 骨架、JWT 注册登录/刷新/登出、MinIO 客户端
+
+### 2026-08-09 Phase 2：PDF 上传与向量索引
+
+- 提交：`55f5c86 feat: add PDF upload and vector indexing`
+- 完成：上传校验、MinIO 存储、PDFBox 解析、切块、Embedding、pgvector 写入、文档列表/状态/删除、用户隔离
+- 验证：全量测试通过，上传样例 PDF 达到 READY，document_chunks 已落库
+
+### 下一步：Phase 3（M4）
+
+- 会话与消息表读写
+- RAG 检索 + Rerank
+- SSE 流式问答
+- 引用解析与 answer_sources
+- 完成后继续 M5 前端工作台
