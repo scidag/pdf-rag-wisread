@@ -85,8 +85,16 @@ public class AuthService {
         User user = userRepository.findById(session.getUserId())
                 .orElseThrow(() -> new ApiException(HttpStatus.UNAUTHORIZED, "user not found"));
 
-        userSessionRepository.deleteById(session.getId());
-        return issueTokens(user, device, ipAddress);
+        String newRefreshToken = jwtService.createRefreshToken(user.getId(), user.getUsername());
+        session.setRefreshTokenHash(sha256(newRefreshToken));
+        session.setDevice(device);
+        session.setIpAddress(ipAddress);
+        session.setExpiresAt(Instant.now().plus(jwtProperties.getRefreshTokenTtl()));
+        userSessionRepository.save(session);
+
+        String accessToken = jwtService.createAccessToken(user.getId(), user.getUsername());
+        long expiresIn = jwtProperties.getAccessTokenTtl().toSeconds();
+        return new AuthResponse(accessToken, newRefreshToken, expiresIn, toResponse(user));
     }
 
     @Transactional
