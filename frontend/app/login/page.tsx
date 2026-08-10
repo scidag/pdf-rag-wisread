@@ -1,5 +1,5 @@
-import AuthPanel from "@/components/AuthPanel";
+import AuthScreen from "@/components/AuthScreen";
 
 export default function LoginPage() {
-  return <AuthPanel mode="login" />;
+  return <AuthScreen initialTab="signin" />;
 }
