@@ -1,6 +1,7 @@
 package com.wisread.service;
 
 import com.wisread.model.TextChunk;
+import com.wisread.model.ChunkSearchResult;
 import org.postgresql.util.PGobject;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
@@ -68,6 +69,30 @@ public class VectorIndexingService {
                 userId,
                 documentId,
                 toVector(queryEmbedding),
+                limit
+        );
+    }
+
+    public List<ChunkSearchResult> searchWithContent(Long userId, Long documentId, float[] queryEmbedding, int limit) {
+        String sql = """
+                SELECT id, content, page_start, page_end, embedding <=> CAST(? AS vector) AS distance
+                FROM document_chunks
+                WHERE user_id = ? AND document_id = ?
+                ORDER BY distance
+                LIMIT ?
+                """;
+        return jdbcTemplate.query(
+                sql,
+                (resultSet, rowNum) -> new ChunkSearchResult(
+                        resultSet.getLong("id"),
+                        resultSet.getString("content"),
+                        resultSet.getInt("page_start"),
+                        resultSet.getInt("page_end"),
+                        resultSet.getDouble("distance")
+                ),
+                toVector(queryEmbedding),
+                userId,
+                documentId,
                 limit
         );
     }
