@@ -3,9 +3,9 @@
 > 状态：待评审
 > 日期：2026-08-09
 > 上游文档：需求文档mvp.md
-> 开发进度：M1 ✅ / M2 ✅ / M3 ✅ / M4 ⏳ 进行中 / M5 ⬜ / M6 ⬜
+> 开发进度：M1 ✅ / M2 ✅ / M3 ✅ / M4 ✅ / M5 ⬜ / M6 ⬜
 > 当前分支：feat/wisread-mvp-phase1
-> 最近提交：55f5c86（Phase 2：PDF 上传与向量索引）
+> 最近提交：604c57b（Phase 3：RAG 问答、SSE 与引用溯源）
 
 ## 1. 背景与目标
 
@@ -463,7 +463,7 @@ Prompt 约定：
 - PDFBox 解析、切块、Embedding、pgvector 写入
 - 文档状态轮询与删除
 
-### M4：问答与引用（⏳ 下一步，对应 Phase 3）
+### M4：问答与引用（✅ 已完成，对应 Phase 3）
 
 - 会话、消息表读写
 - RAG 检索与 Rerank
@@ -505,10 +505,14 @@ Prompt 约定：
 - 完成：上传校验、MinIO 存储、PDFBox 解析、切块、Embedding、pgvector 写入、文档列表/状态/删除、用户隔离
 - 验证：全量测试通过，上传样例 PDF 达到 READY，document_chunks 已落库
 
-### 下一步：Phase 3（M4）
+### 2026-08-10 Phase 3：RAG 问答与引用溯源
 
-- 会话与消息表读写
-- RAG 检索 + Rerank
-- SSE 流式问答
-- 引用解析与 answer_sources
-- 完成后继续 M5 前端工作台
+- 提交：`604c57b feat: add RAG chat with SSE and citations`
+- 完成：会话/消息/answer_sources 实体与接口、query rewrite、向量召回 Top10、Rerank Top3、SSE 流式问答、引用解析与落库、本地 Chat/Embedding Mock
+- 验证：全量测试通过，SSE 返回 `[1]` 来源，answer_sources 已落库，用户隔离返回 404
+
+### 下一步：Phase 4（M5）前端工作台
+
+- 登录/注册页
+- 文档上传、列表、状态展示
+- 会话列表、消息流式渲染、来源卡片
