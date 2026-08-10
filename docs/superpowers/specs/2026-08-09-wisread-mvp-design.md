@@ -3,9 +3,9 @@
 > 状态：待评审
 > 日期：2026-08-09
 > 上游文档：需求文档mvp.md
-> 开发进度：M1 ✅ / M2 ✅ / M3 ✅ / M4 ✅ / M5 ⬜ / M6 ⬜
+> 开发进度：M1 ✅ / M2 ✅ / M3 ✅ / M4 ✅ / M5 ✅ / M6 ⬜
 > 当前分支：feat/wisread-mvp-phase1
-> 最近提交：604c57b（Phase 3：RAG 问答、SSE 与引用溯源）
+> 最近提交：7b32e9c（Phase 4：Next.js 前端工作台）
 
 ## 1. 背景与目标
 
@@ -470,7 +470,7 @@ Prompt 约定：
 - SSE 流式生成
 - 引用解析与 answer_sources
 
-### M5：前端工作台（⬜ 未开始）
+### M5：前端工作台（✅ 已完成，对应 Phase 4）
 
 - 登录页与注册页
 - 上传、文档列表、状态展示
@@ -511,8 +511,14 @@ Prompt 约定：
 - 完成：会话/消息/answer_sources 实体与接口、query rewrite、向量召回 Top10、Rerank Top3、SSE 流式问答、引用解析与落库、本地 Chat/Embedding Mock
 - 验证：全量测试通过，SSE 返回 `[1]` 来源，answer_sources 已落库，用户隔离返回 404
 
-### 下一步：Phase 4（M5）前端工作台
+### 2026-08-10 Phase 4：前端工作台
 
-- 登录/注册页
-- 文档上传、列表、状态展示
-- 会话列表、消息流式渲染、来源卡片
+- 提交：`7b32e9c feat: add Next.js frontend workbench`
+- 完成：登录/注册、文档上传与状态轮询、会话列表、SSE 流式消息、来源卡片、移动端适配、CORS
+- 验证：Next.js 构建通过，Playwright 桌面/移动端登录、提问、来源展示全部通过
+
+### 下一步：M6 测试与验收
+
+- 20 题验收与指标统计
+- 性能与安全测试
+- README 与部署文档
