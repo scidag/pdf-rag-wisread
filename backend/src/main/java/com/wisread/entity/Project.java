@@ -12,8 +12,8 @@ import jakarta.persistence.Table;
 import java.time.Instant;
 
 @Entity
-@Table(name = "conversations")
-public class Conversation {
+@Table(name = "projects")
+public class Project {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -22,14 +22,11 @@ public class Conversation {
     @Column(name = "user_id", nullable = false)
     private Long userId;
 
-    @Column(name = "project_id")
-    private Long projectId;
+    @Column(nullable = false, length = 100)
+    private String name;
 
-    @Column(name = "document_id")
-    private Long documentId;
-
-    @Column(length = 255)
-    private String title;
+    @Column(length = 500)
+    private String description;
 
     @Column(name = "created_at", nullable = false)
     private Instant createdAt;
@@ -61,28 +58,20 @@ public class Conversation {
         this.userId = userId;
     }
 
-    public Long getProjectId() {
-        return projectId;
+    public String getName() {
+        return name;
     }
 
-    public void setProjectId(Long projectId) {
-        this.projectId = projectId;
+    public void setName(String name) {
+        this.name = name;
     }
 
-    public Long getDocumentId() {
-        return documentId;
+    public String getDescription() {
+        return description;
     }
 
-    public void setDocumentId(Long documentId) {
-        this.documentId = documentId;
-    }
-
-    public String getTitle() {
-        return title;
-    }
-
-    public void setTitle(String title) {
-        this.title = title;
+    public void setDescription(String description) {
+        this.description = description;
     }
 
     public Instant getCreatedAt() {

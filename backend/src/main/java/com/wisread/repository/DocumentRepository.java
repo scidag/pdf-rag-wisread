@@ -12,5 +12,13 @@ public interface DocumentRepository extends JpaRepository<Document, Long> {
 
     List<Document> findByUserIdOrderByCreatedAtDesc(Long userId);
 
+    List<Document> findByProjectIdOrderByCreatedAtDesc(Long projectId);
+
+    Optional<Document> findByUserIdAndProjectIdAndId(Long userId, Long projectId, Long id);
+
     long countByUserId(Long userId);
+
+    long countByProjectId(Long projectId);
+
+    long countByUserIdAndProjectId(Long userId, Long projectId);
 }

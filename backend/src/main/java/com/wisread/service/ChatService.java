@@ -11,6 +11,7 @@ import com.wisread.repository.AnswerSourceRepository;
 import com.wisread.repository.ConversationRepository;
 import com.wisread.repository.DocumentRepository;
 import com.wisread.repository.MessageRepository;
+import com.wisread.repository.ProjectRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.ai.chat.messages.AssistantMessage;
@@ -36,6 +37,7 @@ public class ChatService {
     private static final double DISTANCE_THRESHOLD = 0.65;
 
     private final ConversationRepository conversationRepository;
+    private final ProjectRepository projectRepository;
     private final DocumentRepository documentRepository;
     private final MessageRepository messageRepository;
     private final AnswerSourceRepository answerSourceRepository;
@@ -49,6 +51,7 @@ public class ChatService {
 
     public ChatService(
             ConversationRepository conversationRepository,
+            ProjectRepository projectRepository,
             DocumentRepository documentRepository,
             MessageRepository messageRepository,
             AnswerSourceRepository answerSourceRepository,
@@ -61,6 +64,7 @@ public class ChatService {
             @Qualifier("documentTaskExecutor") Executor executor
     ) {
         this.conversationRepository = conversationRepository;
+        this.projectRepository = projectRepository;
         this.documentRepository = documentRepository;
         this.messageRepository = messageRepository;
         this.answerSourceRepository = answerSourceRepository;
@@ -83,8 +87,16 @@ public class ChatService {
         try {
             Conversation conversation = conversationRepository.findByUserIdAndId(userId, conversationId)
                     .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "conversation not found"));
-            Document document = documentRepository.findByUserIdAndId(userId, conversation.getDocumentId())
-                    .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "document not found"));
+            Long projectId = conversation.getProjectId();
+            if (projectId == null) {
+                throw new ApiException(HttpStatus.BAD_REQUEST, "conversation has no project");
+            }
+            projectRepository.findByUserIdAndId(userId, projectId)
+                    .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "project not found"));
+
+            List<com.wisread.entity.Message> history = messageRepository
+                    .findTop10ByConversationIdOrderByCreatedAtDesc(conversationId)
+                    .reversed();
 
             com.wisread.entity.Message userMessage = new com.wisread.entity.Message();
             userMessage.setConversationId(conversationId);
@@ -93,15 +105,11 @@ public class ChatService {
             userMessage.setStatus("COMPLETED");
             messageRepository.save(userMessage);
 
-            List<com.wisread.entity.Message> history = messageRepository
-                    .findTop10ByConversationIdOrderByCreatedAtDesc(conversationId)
-                    .reversed();
-
             String query = queryRewriteService.rewrite(request.content(), history);
             float[] queryEmbedding = embeddingService.embed(List.of(query)).get(0);
             List<ChunkSearchResult> candidates = vectorIndexingService.searchWithContent(
                     userId,
-                    conversation.getDocumentId(),
+                    projectId,
                     queryEmbedding,
                     10
             );
@@ -154,6 +162,7 @@ public class ChatService {
                 AnswerSource answerSource = new AnswerSource();
                 answerSource.setMessageId(assistantMessage.getId());
                 answerSource.setChunkId(source.chunkId());
+                answerSource.setDocumentId(source.documentId());
                 answerSource.setRelevanceScore(1.0f);
                 answerSourceRepository.save(answerSource);
             }
@@ -206,11 +215,13 @@ public class ChatService {
             ChunkSearchResult chunk = chunks.get(i);
             system.append("\n[")
                     .append(i + 1)
-                    .append("] ")
-                    .append(chunk.content())
-                    .append(" (第 ")
+                    .append("] 《")
+                    .append(chunk.filename())
+                    .append("》 第 ")
                     .append(chunk.pageStart())
-                    .append(" 页)\n");
+                    .append(" 页\n")
+                    .append(chunk.content())
+                    .append("\n");
         }
 
         List<org.springframework.ai.chat.messages.Message> messages = new ArrayList<>();

@@ -3,9 +3,64 @@
 @tailwind utilities;
 
 :root {
-  color-scheme: light;
+  color-scheme: dark;
+  --bg: #040810;
+  --bg-deep: #060c1a;
+  --panel: rgba(6, 12, 26, 0.82);
+  --panel-soft: rgba(255, 255, 255, 0.03);
+  --border: rgba(255, 255, 255, 0.07);
+  --border-strong: rgba(255, 255, 255, 0.12);
+  --text: #e8f0ff;
+  --text-soft: rgba(170, 200, 240, 0.55);
+  --text-dim: rgba(160, 185, 225, 0.32);
+  --accent: #3a7fff;
+  --accent-deep: #2860d6;
+  --success: #4ade80;
+  --warning: #f5b14e;
+  --danger: #ff7a8a;
+  --font-sans: "Manrope", "Noto Sans SC", sans-serif;
+  --font-serif: "Noto Serif SC", "Noto Sans SC", serif;
+  --font-mono: "IBM Plex Mono", monospace;
 }
 
 body {
-  @apply bg-slate-50 text-slate-900 antialiased;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* 滚动条 */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(100, 150, 230, 0.25) transparent;
+}
+*::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+*::-webkit-scrollbar-thumb {
+  background: rgba(100, 150, 230, 0.25);
+  border-radius: 4px;
+}
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::selection {
+  background: rgba(80, 140, 255, 0.35);
+}
+
+/* 网格背景 */
+.grid-bg::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background-image:
+    linear-gradient(rgba(130, 175, 235, 0.035) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(130, 175, 235, 0.035) 1px, transparent 1px);
+  background-size: 46px 46px;
+  opacity: 0.65;
 }

@@ -24,6 +24,9 @@ public class UserSession {
     @Column(name = "refresh_token_hash", length = 255)
     private String refreshTokenHash;
 
+    @Column(name = "previous_refresh_token_hash", length = 255)
+    private String previousRefreshTokenHash;
+
     @Column(length = 100)
     private String device;
 
@@ -59,6 +62,14 @@ public class UserSession {
 
     public void setRefreshTokenHash(String refreshTokenHash) {
         this.refreshTokenHash = refreshTokenHash;
+    }
+
+    public String getPreviousRefreshTokenHash() {
+        return previousRefreshTokenHash;
+    }
+
+    public void setPreviousRefreshTokenHash(String previousRefreshTokenHash) {
+        this.previousRefreshTokenHash = previousRefreshTokenHash;
     }
 
     public String getDevice() {

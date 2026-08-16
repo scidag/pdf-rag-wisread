@@ -30,16 +30,21 @@ public class DocumentController {
     @PostMapping(consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public ResponseEntity<DocumentResponse> upload(
             @RequestParam("file") MultipartFile file,
+            @RequestParam("projectId") Long projectId,
             Authentication authentication
     ) {
         Long userId = (Long) authentication.getPrincipal();
-        return ResponseEntity.status(HttpStatus.CREATED).body(documentService.upload(userId, file));
+        return ResponseEntity.status(HttpStatus.CREATED)
+                .body(documentService.upload(userId, projectId, file));
     }
 
     @GetMapping
-    public ResponseEntity<List<DocumentResponse>> list(Authentication authentication) {
+    public ResponseEntity<List<DocumentResponse>> list(
+            @RequestParam("projectId") Long projectId,
+            Authentication authentication
+    ) {
         Long userId = (Long) authentication.getPrincipal();
-        return ResponseEntity.ok(documentService.list(userId));
+        return ResponseEntity.ok(documentService.listByProject(userId, projectId));
     }
 
     @GetMapping("/{documentId}")

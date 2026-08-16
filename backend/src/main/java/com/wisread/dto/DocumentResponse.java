@@ -4,6 +4,7 @@ import java.time.Instant;
 
 public record DocumentResponse(
         Long id,
+        Long projectId,
         String filename,
         Long fileSize,
         Integer pageCount,

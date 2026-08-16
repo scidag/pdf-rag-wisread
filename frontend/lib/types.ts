@@ -4,8 +4,19 @@ export interface User {
   email: string;
 }
 
+export interface Project {
+  id: number;
+  name: string;
+  description: string | null;
+  documentCount: number;
+  conversationCount: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface Document {
   id: number;
+  projectId: number | null;
   filename: string;
   fileSize: number | null;
   pageCount: number | null;
@@ -19,6 +30,8 @@ export interface Document {
 export interface Source {
   index: number;
   chunkId: number;
+  documentId: number | null;
+  filename: string | null;
   pageStart: number;
   pageEnd: number;
   snippet: string;
@@ -26,7 +39,7 @@ export interface Source {
 
 export interface Conversation {
   id: number;
-  documentId: number;
+  projectId: number;
   title: string;
   createdAt: string;
   updatedAt: string;

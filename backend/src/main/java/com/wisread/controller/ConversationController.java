@@ -49,11 +49,11 @@ public class ConversationController {
 
     @GetMapping
     public ResponseEntity<List<ConversationResponse>> list(
-            @RequestParam Long documentId,
+            @RequestParam Long projectId,
             Authentication authentication
     ) {
         Long userId = (Long) authentication.getPrincipal();
-        return ResponseEntity.ok(conversationService.list(userId, documentId));
+        return ResponseEntity.ok(conversationService.list(userId, projectId));
     }
 
     @GetMapping("/{conversationId}/messages")

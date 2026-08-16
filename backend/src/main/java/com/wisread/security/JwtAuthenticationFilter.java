@@ -1,5 +1,6 @@
 package com.wisread.security;
 
+import io.jsonwebtoken.JwtException;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -11,15 +12,16 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
-import java.util.List;
 
 @Component
 public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
     private final JwtService jwtService;
+    private final TokenBlacklistService tokenBlacklistService;
 
-    public JwtAuthenticationFilter(JwtService jwtService) {
+    public JwtAuthenticationFilter(JwtService jwtService, TokenBlacklistService tokenBlacklistService) {
         this.jwtService = jwtService;
+        this.tokenBlacklistService = tokenBlacklistService;
     }
 
     @Override
@@ -31,9 +33,13 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         String header = request.getHeader(HttpHeaders.AUTHORIZATION);
         if (header != null && header.startsWith("Bearer ")) {
             try {
-                Long userId = jwtService.parseUserId(header.substring(7));
+                String token = header.substring(7);
+                if (tokenBlacklistService.isBlacklisted(token)) {
+                    throw new JwtException("token is blacklisted");
+                }
+                Long userId = jwtService.parseUserId(token);
                 UsernamePasswordAuthenticationToken authentication =
-                        new UsernamePasswordAuthenticationToken(userId, null, List.of());
+                        new UsernamePasswordAuthenticationToken(userId, null, jwtService.parseAuthorities(token));
                 SecurityContextHolder.getContext().setAuthentication(authentication);
             } catch (Exception ignored) {
                 SecurityContextHolder.clearContext();

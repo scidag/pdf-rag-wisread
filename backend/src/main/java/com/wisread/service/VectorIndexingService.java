@@ -55,29 +55,19 @@ public class VectorIndexingService {
         jdbcTemplate.update("DELETE FROM document_chunks WHERE document_id = ?", documentId);
     }
 
-    public List<Long> search(Long userId, Long documentId, float[] queryEmbedding, int limit) {
+    /**
+     * 项目级多文档检索：在项目下所有 READY 文档的 chunks 中检索。
+     */
+    public List<ChunkSearchResult> searchWithContent(Long userId, Long projectId, float[] queryEmbedding, int limit) {
         String sql = """
-                SELECT id
-                FROM document_chunks
-                WHERE user_id = ? AND document_id = ?
-                ORDER BY embedding <=> CAST(? AS vector)
-                LIMIT ?
-                """;
-        return jdbcTemplate.query(
-                sql,
-                (resultSet, rowNum) -> resultSet.getLong("id"),
-                userId,
-                documentId,
-                toVector(queryEmbedding),
-                limit
-        );
-    }
-
-    public List<ChunkSearchResult> searchWithContent(Long userId, Long documentId, float[] queryEmbedding, int limit) {
-        String sql = """
-                SELECT id, content, page_start, page_end, embedding <=> CAST(? AS vector) AS distance
-                FROM document_chunks
-                WHERE user_id = ? AND document_id = ?
+                SELECT dc.id, dc.document_id, dc.content, dc.page_start, dc.page_end,
+                       dc.embedding <=> CAST(? AS vector) AS distance,
+                       d.filename AS document_filename
+                FROM document_chunks dc
+                JOIN documents d ON d.id = dc.document_id
+                WHERE dc.user_id = ?
+                  AND d.project_id = ?
+                  AND d.status = 'READY'
                 ORDER BY distance
                 LIMIT ?
                 """;
@@ -85,6 +75,8 @@ public class VectorIndexingService {
                 sql,
                 (resultSet, rowNum) -> new ChunkSearchResult(
                         resultSet.getLong("id"),
+                        resultSet.getLong("document_id"),
+                        resultSet.getString("document_filename"),
                         resultSet.getString("content"),
                         resultSet.getInt("page_start"),
                         resultSet.getInt("page_end"),
@@ -92,7 +84,7 @@ public class VectorIndexingService {
                 ),
                 toVector(queryEmbedding),
                 userId,
-                documentId,
+                projectId,
                 limit
         );
     }

@@ -38,13 +38,21 @@ public class SecurityConfig {
                                 "/actuator/health",
                                 "/error"
                         ).permitAll()
+                        .requestMatchers("/api/v1/admin/**").hasRole("ADMIN")
                         .anyRequest().authenticated()
                 )
-                .exceptionHandling(handling -> handling.authenticationEntryPoint((request, response, exception) -> {
-                    response.setStatus(HttpStatus.UNAUTHORIZED.value());
-                    response.setContentType("application/json;charset=UTF-8");
-                    response.getWriter().write("{\"code\":401,\"message\":\"unauthorized\"}");
-                }))
+                .exceptionHandling(handling -> handling
+                        .authenticationEntryPoint((request, response, exception) -> {
+                            response.setStatus(HttpStatus.UNAUTHORIZED.value());
+                            response.setContentType("application/json;charset=UTF-8");
+                            response.getWriter().write("{\"code\":401,\"message\":\"unauthorized\"}");
+                        })
+                        .accessDeniedHandler((request, response, exception) -> {
+                            response.setStatus(HttpStatus.FORBIDDEN.value());
+                            response.setContentType("application/json;charset=UTF-8");
+                            response.getWriter().write("{\"code\":403,\"message\":\"forbidden\"}");
+                        })
+                )
                 .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
         return http.build();
     }

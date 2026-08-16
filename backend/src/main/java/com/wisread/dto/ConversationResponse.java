@@ -4,7 +4,7 @@ import java.time.Instant;
 
 public record ConversationResponse(
         Long id,
-        Long documentId,
+        Long projectId,
         String title,
         Instant createdAt,
         Instant updatedAt

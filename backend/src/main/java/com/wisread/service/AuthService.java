@@ -22,6 +22,7 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.time.Instant;
 import java.util.HexFormat;
+import java.util.Set;
 
 @Service
 public class AuthService {
@@ -78,21 +79,36 @@ public class AuthService {
             throw new ApiException(HttpStatus.UNAUTHORIZED, "missing refresh token");
         }
         String hash = sha256(refreshToken);
+        Instant now = Instant.now();
         UserSession session = userSessionRepository
-                .findByRefreshTokenHashAndExpiresAtAfter(hash, Instant.now())
-                .orElseThrow(() -> new ApiException(HttpStatus.UNAUTHORIZED, "invalid refresh token"));
+                .findByRefreshTokenHashAndExpiresAtAfter(hash, now)
+                .orElse(null);
+
+        if (session == null) {
+            // 重用检测：命中上一代哈希说明这是已被轮换过的旧 token（可能泄露），
+            // 立即撤销该用户的所有会话。
+            UserSession stale = userSessionRepository
+                    .findByPreviousRefreshTokenHashAndExpiresAtAfter(hash, now)
+                    .orElse(null);
+            if (stale != null) {
+                userSessionRepository.deleteByUserId(stale.getUserId());
+                throw new ApiException(HttpStatus.UNAUTHORIZED, "refresh token reuse detected");
+            }
+            throw new ApiException(HttpStatus.UNAUTHORIZED, "invalid refresh token");
+        }
 
         User user = userRepository.findById(session.getUserId())
                 .orElseThrow(() -> new ApiException(HttpStatus.UNAUTHORIZED, "user not found"));
 
-        String newRefreshToken = jwtService.createRefreshToken(user.getId(), user.getUsername());
+        String newRefreshToken = jwtService.createRefreshToken(user.getId(), user.getUsername(), rolesOf(user));
+        session.setPreviousRefreshTokenHash(session.getRefreshTokenHash());
         session.setRefreshTokenHash(sha256(newRefreshToken));
         session.setDevice(device);
         session.setIpAddress(ipAddress);
         session.setExpiresAt(Instant.now().plus(jwtProperties.getRefreshTokenTtl()));
         userSessionRepository.save(session);
 
-        String accessToken = jwtService.createAccessToken(user.getId(), user.getUsername());
+        String accessToken = jwtService.createAccessToken(user.getId(), user.getUsername(), rolesOf(user));
         long expiresIn = jwtProperties.getAccessTokenTtl().toSeconds();
         return new AuthResponse(accessToken, newRefreshToken, expiresIn, toResponse(user));
     }
@@ -114,8 +130,9 @@ public class AuthService {
     }
 
     private AuthResponse issueTokens(User user, String device, String ipAddress) {
-        String accessToken = jwtService.createAccessToken(user.getId(), user.getUsername());
-        String refreshToken = jwtService.createRefreshToken(user.getId(), user.getUsername());
+        Set<String> roles = rolesOf(user);
+        String accessToken = jwtService.createAccessToken(user.getId(), user.getUsername(), roles);
+        String refreshToken = jwtService.createRefreshToken(user.getId(), user.getUsername(), roles);
 
         UserSession session = new UserSession();
         session.setUserId(user.getId());
@@ -131,6 +148,10 @@ public class AuthService {
 
     private UserResponse toResponse(User user) {
         return new UserResponse(user.getId(), user.getUsername(), user.getEmail());
+    }
+
+    private Set<String> rolesOf(User user) {
+        return Set.of(user.getRole().name());
     }
 
     private String sha256(String value) {

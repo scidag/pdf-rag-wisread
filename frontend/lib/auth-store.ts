@@ -58,9 +58,11 @@ export async function register(
 
 export async function logout(): Promise<void> {
   try {
+    const token = accessToken;
     await fetch(`${API_BASE}/auth/logout`, {
       method: "POST",
-      credentials: "include"
+      credentials: "include",
+      headers: token ? { Authorization: `Bearer ${token}` } : undefined
     });
   } finally {
     accessToken = null;

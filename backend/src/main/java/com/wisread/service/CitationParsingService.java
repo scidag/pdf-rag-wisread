@@ -32,6 +32,8 @@ public class CitationParsingService {
                 sources.add(new SourceResponse(
                         marker,
                         chunk.chunkId(),
+                        chunk.documentId(),
+                        chunk.filename(),
                         chunk.pageStart(),
                         chunk.pageEnd(),
                         truncate(chunk.content())

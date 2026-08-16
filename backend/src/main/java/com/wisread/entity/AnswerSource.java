@@ -24,6 +24,9 @@ public class AnswerSource {
     @Column(name = "chunk_id", nullable = false)
     private Long chunkId;
 
+    @Column(name = "document_id")
+    private Long documentId;
+
     @Column(name = "relevance_score")
     private Float relevanceScore;
 
@@ -53,6 +56,14 @@ public class AnswerSource {
 
     public void setChunkId(Long chunkId) {
         this.chunkId = chunkId;
+    }
+
+    public Long getDocumentId() {
+        return documentId;
+    }
+
+    public void setDocumentId(Long documentId) {
+        this.documentId = documentId;
     }
 
     public Float getRelevanceScore() {

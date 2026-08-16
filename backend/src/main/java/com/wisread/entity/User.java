@@ -1,7 +1,10 @@
 package com.wisread.entity;
 
+import com.wisread.model.Role;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
@@ -33,6 +36,10 @@ public class User {
 
     @Column(nullable = false)
     private Short status = 1;
+
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, length = 20)
+    private Role role = Role.USER;
 
     @Column(name = "created_at", nullable = false)
     private Instant createdAt;
@@ -94,6 +101,14 @@ public class User {
 
     public void setStatus(Short status) {
         this.status = status;
+    }
+
+    public Role getRole() {
+        return role;
+    }
+
+    public void setRole(Role role) {
+        this.role = role;
     }
 
     public Instant getCreatedAt() {

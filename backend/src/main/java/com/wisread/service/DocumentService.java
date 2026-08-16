@@ -6,6 +6,7 @@ import com.wisread.entity.DocumentJob;
 import com.wisread.exception.ApiException;
 import com.wisread.repository.DocumentJobRepository;
 import com.wisread.repository.DocumentRepository;
+import com.wisread.repository.ProjectRepository;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -18,33 +19,42 @@ import java.util.UUID;
 @Service
 public class DocumentService {
 
-    private static final long MAX_FILE_SIZE = 20L * 1024 * 1024;
-    private static final int MAX_DOCUMENTS_PER_USER = 5;
+    private static final long MAX_FILE_SIZE = 100L * 1024 * 1024;
+    private static final int MAX_DOCUMENTS_PER_PROJECT = 5;
 
     private final DocumentRepository documentRepository;
     private final DocumentJobRepository documentJobRepository;
+    private final ProjectRepository projectRepository;
     private final MinioStorageService minioStorageService;
     private final DocumentProcessingService documentProcessingService;
 
     public DocumentService(
             DocumentRepository documentRepository,
             DocumentJobRepository documentJobRepository,
+            ProjectRepository projectRepository,
             MinioStorageService minioStorageService,
             DocumentProcessingService documentProcessingService
     ) {
         this.documentRepository = documentRepository;
         this.documentJobRepository = documentJobRepository;
+        this.projectRepository = projectRepository;
         this.minioStorageService = minioStorageService;
         this.documentProcessingService = documentProcessingService;
     }
 
     @Transactional
-    public DocumentResponse upload(Long userId, MultipartFile file) {
+    public DocumentResponse upload(Long userId, Long projectId, MultipartFile file) {
+        if (projectId == null) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "projectId is required");
+        }
+        projectRepository.findByUserIdAndId(userId, projectId)
+                .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "project not found"));
+
         if (file == null || file.isEmpty()) {
             throw new ApiException(HttpStatus.BAD_REQUEST, "file is required");
         }
         if (file.getSize() > MAX_FILE_SIZE) {
-            throw new ApiException(HttpStatus.PAYLOAD_TOO_LARGE, "file exceeds 20MB limit");
+            throw new ApiException(HttpStatus.PAYLOAD_TOO_LARGE, "file exceeds 100MB limit");
         }
 
         byte[] bytes;
@@ -56,8 +66,9 @@ public class DocumentService {
         if (!isPdf(bytes)) {
             throw new ApiException(HttpStatus.UNSUPPORTED_MEDIA_TYPE, "only PDF files are supported");
         }
-        if (documentRepository.countByUserId(userId) >= MAX_DOCUMENTS_PER_USER) {
-            throw new ApiException(HttpStatus.BAD_REQUEST, "user document limit of 5 reached");
+        if (documentRepository.countByProjectId(projectId) >= MAX_DOCUMENTS_PER_PROJECT) {
+            throw new ApiException(HttpStatus.BAD_REQUEST,
+                    "project document limit of " + MAX_DOCUMENTS_PER_PROJECT + " reached");
         }
 
         String fileKey = userId + "/" + UUID.randomUUID() + ".pdf";
@@ -65,6 +76,7 @@ public class DocumentService {
 
         Document document = new Document();
         document.setUserId(userId);
+        document.setProjectId(projectId);
         document.setFilename(file.getOriginalFilename());
         document.setFileKey(fileKey);
         document.setFileSize((long) bytes.length);
@@ -78,6 +90,16 @@ public class DocumentService {
 
         documentProcessingService.processDocument(document.getId(), userId);
         return toResponse(document);
+    }
+
+    @Transactional(readOnly = true)
+    public List<DocumentResponse> listByProject(Long userId, Long projectId) {
+        projectRepository.findByUserIdAndId(userId, projectId)
+                .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "project not found"));
+        return documentRepository.findByProjectIdOrderByCreatedAtDesc(projectId)
+                .stream()
+                .map(this::toResponse)
+                .toList();
     }
 
     @Transactional(readOnly = true)
@@ -116,6 +138,7 @@ public class DocumentService {
     private DocumentResponse toResponse(Document document) {
         return new DocumentResponse(
                 document.getId(),
+                document.getProjectId(),
                 document.getFilename(),
                 document.getFileSize(),
                 document.getPageCount(),
