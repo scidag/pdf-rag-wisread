@@ -17,7 +17,6 @@
 
     <properties>
         <java.version>21</java.version>
-        <spring-ai-alibaba.version>1.0.0-M6.1</spring-ai-alibaba.version>
         <jjwt.version>0.12.6</jjwt.version>
         <minio.version>8.5.17</minio.version>
         <pdfbox.version>3.0.8</pdfbox.version>
@@ -61,9 +60,9 @@
             <artifactId>flyway-database-postgresql</artifactId>
         </dependency>
         <dependency>
-            <groupId>com.alibaba.cloud.ai</groupId>
-            <artifactId>spring-ai-alibaba-starter</artifactId>
-            <version>${spring-ai-alibaba.version}</version>
+            <groupId>org.springframework.ai</groupId>
+            <artifactId>spring-ai-openai-spring-boot-starter</artifactId>
+            <version>1.0.0-M6</version>
         </dependency>
         <dependency>
             <groupId>io.minio</groupId>
