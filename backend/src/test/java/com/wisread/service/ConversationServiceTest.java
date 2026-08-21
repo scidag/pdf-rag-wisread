@@ -88,10 +88,10 @@ class ConversationServiceTest {
     @Test
     void createUsesDefaultTitleWhenBlank() {
         mockProjectOwned();
-        when(conversationRepository.save(any(Conversation.class))).thenAnswer(invocation -> {
+        when(conversationRepository.insert(any(Conversation.class))).thenAnswer(invocation -> {
             Conversation conversation = invocation.getArgument(0);
             ReflectionTestUtils.setField(conversation, "id", 5L);
-            return conversation;
+            return 1;
         });
 
         ConversationResponse response = conversationService.create(
@@ -107,10 +107,10 @@ class ConversationServiceTest {
     @Test
     void createUsesProvidedTitle() {
         mockProjectOwned();
-        when(conversationRepository.save(any(Conversation.class))).thenAnswer(invocation -> {
+        when(conversationRepository.insert(any(Conversation.class))).thenAnswer(invocation -> {
             Conversation conversation = invocation.getArgument(0);
             ReflectionTestUtils.setField(conversation, "id", 6L);
-            return conversation;
+            return 1;
         });
 
         ConversationResponse response = conversationService.create(

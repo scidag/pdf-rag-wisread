@@ -1,24 +1,53 @@
 package com.wisread.repository;
 
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.wisread.entity.Document;
-import org.springframework.data.jpa.repository.JpaRepository;
+import org.apache.ibatis.annotations.Mapper;
 
 import java.util.List;
 import java.util.Optional;
 
-public interface DocumentRepository extends JpaRepository<Document, Long> {
+@Mapper
+public interface DocumentRepository extends BaseRepository<Document> {
 
-    Optional<Document> findByUserIdAndId(Long userId, Long id);
+    default Optional<Document> findByUserIdAndId(Long userId, Long id) {
+        return Optional.ofNullable(selectOne(new LambdaQueryWrapper<Document>()
+                .eq(Document::getUserId, userId)
+                .eq(Document::getId, id)));
+    }
 
-    List<Document> findByUserIdOrderByCreatedAtDesc(Long userId);
+    default List<Document> findByUserIdOrderByCreatedAtDesc(Long userId) {
+        return selectList(new LambdaQueryWrapper<Document>()
+                .eq(Document::getUserId, userId)
+                .orderByDesc(Document::getCreatedAt));
+    }
 
-    List<Document> findByProjectIdOrderByCreatedAtDesc(Long projectId);
+    default List<Document> findByProjectIdOrderByCreatedAtDesc(Long projectId) {
+        return selectList(new LambdaQueryWrapper<Document>()
+                .eq(Document::getProjectId, projectId)
+                .orderByDesc(Document::getCreatedAt));
+    }
 
-    Optional<Document> findByUserIdAndProjectIdAndId(Long userId, Long projectId, Long id);
+    default Optional<Document> findByUserIdAndProjectIdAndId(Long userId, Long projectId, Long id) {
+        return Optional.ofNullable(selectOne(new LambdaQueryWrapper<Document>()
+                .eq(Document::getUserId, userId)
+                .eq(Document::getProjectId, projectId)
+                .eq(Document::getId, id)));
+    }
 
-    long countByUserId(Long userId);
+    default long countByUserId(Long userId) {
+        return selectCount(new LambdaQueryWrapper<Document>()
+                .eq(Document::getUserId, userId));
+    }
 
-    long countByProjectId(Long projectId);
+    default long countByProjectId(Long projectId) {
+        return selectCount(new LambdaQueryWrapper<Document>()
+                .eq(Document::getProjectId, projectId));
+    }
 
-    long countByUserIdAndProjectId(Long userId, Long projectId);
+    default long countByUserIdAndProjectId(Long userId, Long projectId) {
+        return selectCount(new LambdaQueryWrapper<Document>()
+                .eq(Document::getUserId, userId)
+                .eq(Document::getProjectId, projectId));
+    }
 }

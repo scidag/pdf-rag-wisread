@@ -1,15 +1,26 @@
 package com.wisread.repository;
 
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.wisread.entity.User;
-import org.springframework.data.jpa.repository.JpaRepository;
+import org.apache.ibatis.annotations.Mapper;
 
 import java.util.Optional;
 
-public interface UserRepository extends JpaRepository<User, Long> {
+@Mapper
+public interface UserRepository extends BaseRepository<User> {
 
-    boolean existsByEmail(String email);
+    default boolean existsByEmail(String email) {
+        return selectCount(new LambdaQueryWrapper<User>()
+                .eq(User::getEmail, email)) > 0;
+    }
 
-    boolean existsByUsername(String username);
+    default boolean existsByUsername(String username) {
+        return selectCount(new LambdaQueryWrapper<User>()
+                .eq(User::getUsername, username)) > 0;
+    }
 
-    Optional<User> findByEmail(String email);
+    default Optional<User> findByEmail(String email) {
+        return Optional.ofNullable(selectOne(new LambdaQueryWrapper<User>()
+                .eq(User::getEmail, email)));
+    }
 }

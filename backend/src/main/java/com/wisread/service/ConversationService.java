@@ -63,7 +63,7 @@ public class ConversationService {
         conversation.setTitle(request.title() == null || request.title().isBlank()
                 ? "新会话"
                 : request.title());
-        conversationRepository.save(conversation);
+        conversationRepository.insert(conversation);
         return toResponse(conversation);
     }
 

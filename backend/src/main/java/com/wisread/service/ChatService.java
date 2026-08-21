@@ -20,6 +20,7 @@ import org.springframework.ai.chat.messages.UserMessage;
 import org.springframework.ai.chat.model.ChatModel;
 import org.springframework.ai.chat.prompt.Prompt;
 import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
@@ -46,7 +47,10 @@ public class ChatService {
     private final RerankService rerankService;
     private final QueryRewriteService queryRewriteService;
     private final CitationParsingService citationParsingService;
+    private final TokenCounter tokenCounter;
+    private final UsageLogService usageLogService;
     private final ChatModel chatModel;
+    private final String chatModelName;
     private final Executor executor;
 
     public ChatService(
@@ -60,6 +64,9 @@ public class ChatService {
             RerankService rerankService,
             QueryRewriteService queryRewriteService,
             CitationParsingService citationParsingService,
+            TokenCounter tokenCounter,
+            UsageLogService usageLogService,
+            @Value("${spring.ai.openai.chat.options.model:qwen3.7-plus}") String chatModelName,
             ChatModel chatModel,
             @Qualifier("documentTaskExecutor") Executor executor
     ) {
@@ -73,7 +80,10 @@ public class ChatService {
         this.rerankService = rerankService;
         this.queryRewriteService = queryRewriteService;
         this.citationParsingService = citationParsingService;
+        this.tokenCounter = tokenCounter;
+        this.usageLogService = usageLogService;
         this.chatModel = chatModel;
+        this.chatModelName = chatModelName;
         this.executor = executor;
     }
 
@@ -103,10 +113,10 @@ public class ChatService {
             userMessage.setRole("user");
             userMessage.setContent(request.content());
             userMessage.setStatus("COMPLETED");
-            messageRepository.save(userMessage);
+            messageRepository.insert(userMessage);
 
-            String query = queryRewriteService.rewrite(request.content(), history);
-            float[] queryEmbedding = embeddingService.embed(List.of(query)).get(0);
+            String query = queryRewriteService.rewrite(request.content(), history, userId);
+            float[] queryEmbedding = embeddingService.embed(List.of(query), userId).get(0);
             List<ChunkSearchResult> candidates = vectorIndexingService.searchWithContent(
                     userId,
                     projectId,
@@ -123,6 +133,7 @@ public class ChatService {
             }
 
             Prompt prompt = buildPrompt(query, chunks, history);
+            int promptTokens = countPromptTokens(prompt);
             StringBuilder answer = new StringBuilder();
             chatModel.stream(prompt).subscribe(
                     response -> {
@@ -142,7 +153,7 @@ public class ChatService {
                         }
                     },
                     emitter::completeWithError,
-                    () -> completeAnswer(conversation, chunks, answer.toString(), emitter)
+                    () -> completeAnswer(conversation, chunks, answer.toString(), emitter, promptTokens)
             );
         } catch (Exception exception) {
             emitter.completeWithError(exception);
@@ -153,9 +164,16 @@ public class ChatService {
             Conversation conversation,
             List<ChunkSearchResult> chunks,
             String answer,
-            SseEmitter emitter
+            SseEmitter emitter,
+            int promptTokens
     ) {
         try {
+            usageLogService.log(
+                    conversation.getUserId(),
+                    chatModelName,
+                    promptTokens,
+                    tokenCounter.count(answer)
+            );
             com.wisread.entity.Message assistantMessage = persistAssistantMessage(
                     conversation.getId(),
                     answer
@@ -167,10 +185,10 @@ public class ChatService {
                 answerSource.setChunkId(source.chunkId());
                 answerSource.setDocumentId(source.documentId());
                 answerSource.setRelevanceScore(1.0f);
-                answerSourceRepository.save(answerSource);
+                answerSourceRepository.insert(answerSource);
             }
             conversation.setUpdatedAt(Instant.now());
-            conversationRepository.save(conversation);
+            conversationRepository.updateById(conversation);
 
             emitter.send(SseEmitter.event()
                     .name("done")
@@ -179,6 +197,12 @@ public class ChatService {
         } catch (Exception exception) {
             emitter.completeWithError(exception);
         }
+    }
+
+    private int countPromptTokens(Prompt prompt) {
+        return prompt.getInstructions().stream()
+                .mapToInt(message -> tokenCounter.count(message.getText()))
+                .sum();
     }
 
     private void sendNoAnswer(Long conversationId, SseEmitter emitter) {
@@ -200,7 +224,8 @@ public class ChatService {
         assistantMessage.setRole("assistant");
         assistantMessage.setContent(content);
         assistantMessage.setStatus("COMPLETED");
-        return messageRepository.save(assistantMessage);
+        messageRepository.insert(assistantMessage);
+        return assistantMessage;
     }
 
     private Prompt buildPrompt(

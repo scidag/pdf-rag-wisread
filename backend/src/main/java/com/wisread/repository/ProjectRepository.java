@@ -1,20 +1,46 @@
 package com.wisread.repository;
 
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.wisread.entity.Project;
-import org.springframework.data.jpa.repository.JpaRepository;
+import org.apache.ibatis.annotations.Mapper;
 
 import java.util.List;
 import java.util.Optional;
 
-public interface ProjectRepository extends JpaRepository<Project, Long> {
+@Mapper
+public interface ProjectRepository extends BaseRepository<Project> {
 
-    List<Project> findByUserIdAndDeletedAtIsNullOrderByCreatedAtDesc(Long userId);
+    default List<Project> findByUserIdAndDeletedAtIsNullOrderByCreatedAtDesc(Long userId) {
+        return selectList(new LambdaQueryWrapper<Project>()
+                .eq(Project::getUserId, userId)
+                .isNull(Project::getDeletedAt)
+                .orderByDesc(Project::getCreatedAt));
+    }
 
-    List<Project> findByUserIdAndDeletedAtIsNotNullOrderByDeletedAtDesc(Long userId);
+    default List<Project> findByUserIdAndDeletedAtIsNotNullOrderByDeletedAtDesc(Long userId) {
+        return selectList(new LambdaQueryWrapper<Project>()
+                .eq(Project::getUserId, userId)
+                .isNotNull(Project::getDeletedAt)
+                .orderByDesc(Project::getDeletedAt));
+    }
 
-    Optional<Project> findByUserIdAndIdAndDeletedAtIsNull(Long userId, Long id);
+    default Optional<Project> findByUserIdAndIdAndDeletedAtIsNull(Long userId, Long id) {
+        return Optional.ofNullable(selectOne(new LambdaQueryWrapper<Project>()
+                .eq(Project::getUserId, userId)
+                .eq(Project::getId, id)
+                .isNull(Project::getDeletedAt)));
+    }
 
-    Optional<Project> findByUserIdAndIdAndDeletedAtIsNotNull(Long userId, Long id);
+    default Optional<Project> findByUserIdAndIdAndDeletedAtIsNotNull(Long userId, Long id) {
+        return Optional.ofNullable(selectOne(new LambdaQueryWrapper<Project>()
+                .eq(Project::getUserId, userId)
+                .eq(Project::getId, id)
+                .isNotNull(Project::getDeletedAt)));
+    }
 
-    long countByUserIdAndDeletedAtIsNull(Long userId);
+    default long countByUserIdAndDeletedAtIsNull(Long userId) {
+        return selectCount(new LambdaQueryWrapper<Project>()
+                .eq(Project::getUserId, userId)
+                .isNull(Project::getDeletedAt));
+    }
 }

@@ -61,10 +61,10 @@ class AuthServiceTest {
         when(userRepository.existsByEmail("alice@example.com")).thenReturn(false);
         when(jwtService.createAccessToken(1L, "alice", Set.of("USER"))).thenReturn("access");
         when(jwtService.createRefreshToken(1L, "alice", Set.of("USER"))).thenReturn("refresh");
-        when(userRepository.save(any(User.class))).thenAnswer(invocation -> {
+        when(userRepository.insert(any(User.class))).thenAnswer(invocation -> {
             User user = invocation.getArgument(0);
             ReflectionTestUtils.setField(user, "id", 1L);
-            return user;
+            return 1;
         });
 
         AuthResponse response = authService.register(
@@ -74,7 +74,7 @@ class AuthServiceTest {
         assertThat(response.accessToken()).isEqualTo("access");
         assertThat(response.refreshToken()).isEqualTo("refresh");
         assertThat(response.user().username()).isEqualTo("alice");
-        verify(userRepository).save(any(User.class));
+        verify(userRepository).insert(any(User.class));
     }
 
     @Test
@@ -105,7 +105,7 @@ class AuthServiceTest {
 
         assertThat(response.accessToken()).isEqualTo("access");
         assertThat(response.refreshToken()).isEqualTo("refresh");
-        verify(userSessionRepository).save(any(UserSession.class));
+        verify(userSessionRepository).insert(any(UserSession.class));
     }
 
     @Test

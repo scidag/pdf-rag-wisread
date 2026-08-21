@@ -1,11 +1,19 @@
 package com.wisread.repository;
 
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.wisread.entity.DocumentChunk;
-import org.springframework.data.jpa.repository.JpaRepository;
+import org.apache.ibatis.annotations.Mapper;
 
-public interface DocumentChunkRepository extends JpaRepository<DocumentChunk, Long> {
+@Mapper
+public interface DocumentChunkRepository extends BaseRepository<DocumentChunk> {
 
-    void deleteByDocumentId(Long documentId);
+    default void deleteByDocumentId(Long documentId) {
+        delete(new LambdaQueryWrapper<DocumentChunk>()
+                .eq(DocumentChunk::getDocumentId, documentId));
+    }
 
-    long countByDocumentId(Long documentId);
+    default long countByDocumentId(Long documentId) {
+        return selectCount(new LambdaQueryWrapper<DocumentChunk>()
+                .eq(DocumentChunk::getDocumentId, documentId));
+    }
 }

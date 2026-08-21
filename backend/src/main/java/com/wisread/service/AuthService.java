@@ -58,7 +58,7 @@ public class AuthService {
         user.setUsername(request.username());
         user.setEmail(request.email());
         user.setPasswordHash(passwordEncoder.encode(request.password()));
-        userRepository.save(user);
+        userRepository.insert(user);
 
         return issueTokens(user, null, null);
     }
@@ -106,7 +106,7 @@ public class AuthService {
         session.setDevice(device);
         session.setIpAddress(ipAddress);
         session.setExpiresAt(Instant.now().plus(jwtProperties.getRefreshTokenTtl()));
-        userSessionRepository.save(session);
+        userSessionRepository.updateById(session);
 
         String accessToken = jwtService.createAccessToken(user.getId(), user.getUsername(), rolesOf(user));
         long expiresIn = jwtProperties.getAccessTokenTtl().toSeconds();
@@ -140,7 +140,7 @@ public class AuthService {
         session.setDevice(device);
         session.setIpAddress(ipAddress);
         session.setExpiresAt(Instant.now().plus(jwtProperties.getRefreshTokenTtl()));
-        userSessionRepository.save(session);
+        userSessionRepository.insert(session);
 
         long expiresIn = jwtProperties.getAccessTokenTtl().toSeconds();
         return new AuthResponse(accessToken, refreshToken, expiresIn, toResponse(user));

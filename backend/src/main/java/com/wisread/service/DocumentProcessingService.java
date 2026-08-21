@@ -68,8 +68,8 @@ public class DocumentProcessingService {
         document.setStatus("PROCESSING");
         job.setStatus("RUNNING");
         job.setStartedAt(Instant.now());
-        documentRepository.save(document);
-        documentJobRepository.save(job);
+        documentRepository.updateById(document);
+        documentJobRepository.updateById(job);
 
         try {
             byte[] pdfBytes = minioStorageService.getObject(document.getFileKey());
@@ -92,7 +92,7 @@ public class DocumentProcessingService {
             }
 
             List<String> texts = chunks.stream().map(TextChunk::content).toList();
-            List<float[]> embeddings = embeddingService.embed(texts);
+            List<float[]> embeddings = embeddingService.embed(texts, userId);
             vectorIndexingService.saveChunks(documentId, userId, chunks, embeddings, embeddingModelVersion);
 
             document.setPageCount(pages.size());
@@ -103,8 +103,8 @@ public class DocumentProcessingService {
             job.setStatus("SUCCEEDED");
             job.setFinishedAt(Instant.now());
             job.setErrorMessage(null);
-            documentRepository.save(document);
-            documentJobRepository.save(job);
+            documentRepository.updateById(document);
+            documentJobRepository.updateById(job);
         } catch (Exception exception) {
             handleFailure(document, job, exception);
         }
@@ -122,8 +122,8 @@ public class DocumentProcessingService {
             job.setStartedAt(null);
             job.setFinishedAt(null);
             job.setErrorMessage(exception.getMessage());
-            documentRepository.save(document);
-            documentJobRepository.save(job);
+            documentRepository.updateById(document);
+            documentJobRepository.updateById(job);
             processInternal(document.getId(), document.getUserId());
         } else {
             document.setStatus("FAILED");
@@ -131,8 +131,8 @@ public class DocumentProcessingService {
             job.setStatus("FAILED");
             job.setFinishedAt(Instant.now());
             job.setErrorMessage(exception.getMessage());
-            documentRepository.save(document);
-            documentJobRepository.save(job);
+            documentRepository.updateById(document);
+            documentJobRepository.updateById(job);
         }
     }
 }

@@ -1,16 +1,29 @@
 package com.wisread.repository;
 
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.wisread.entity.UserSession;
-import org.springframework.data.jpa.repository.JpaRepository;
+import org.apache.ibatis.annotations.Mapper;
 
 import java.time.Instant;
 import java.util.Optional;
 
-public interface UserSessionRepository extends JpaRepository<UserSession, Long> {
+@Mapper
+public interface UserSessionRepository extends BaseRepository<UserSession> {
 
-    Optional<UserSession> findByRefreshTokenHashAndExpiresAtAfter(String refreshTokenHash, Instant now);
+    default Optional<UserSession> findByRefreshTokenHashAndExpiresAtAfter(String refreshTokenHash, Instant now) {
+        return Optional.ofNullable(selectOne(new LambdaQueryWrapper<UserSession>()
+                .eq(UserSession::getRefreshTokenHash, refreshTokenHash)
+                .gt(UserSession::getExpiresAt, now)));
+    }
 
-    Optional<UserSession> findByPreviousRefreshTokenHashAndExpiresAtAfter(String previousRefreshTokenHash, Instant now);
+    default Optional<UserSession> findByPreviousRefreshTokenHashAndExpiresAtAfter(String previousRefreshTokenHash, Instant now) {
+        return Optional.ofNullable(selectOne(new LambdaQueryWrapper<UserSession>()
+                .eq(UserSession::getPreviousRefreshTokenHash, previousRefreshTokenHash)
+                .gt(UserSession::getExpiresAt, now)));
+    }
 
-    void deleteByUserId(Long userId);
+    default void deleteByUserId(Long userId) {
+        delete(new LambdaQueryWrapper<UserSession>()
+                .eq(UserSession::getUserId, userId));
+    }
 }

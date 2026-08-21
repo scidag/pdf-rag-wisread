@@ -167,6 +167,6 @@ class DocumentServiceTest {
         documentService.delete(1L, 10L);
 
         verify(minioStorageService).deleteObject("1/abc.pdf");
-        verify(documentRepository).delete(any(Document.class));
+        verify(documentRepository).deleteById(10L);
     }
 }

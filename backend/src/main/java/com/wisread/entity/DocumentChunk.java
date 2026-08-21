@@ -1,54 +1,37 @@
 package com.wisread.entity;
 
-import jakarta.persistence.Column;
-import jakarta.persistence.Entity;
-import jakarta.persistence.GeneratedValue;
-import jakarta.persistence.GenerationType;
-import jakarta.persistence.Id;
-import jakarta.persistence.PrePersist;
-import jakarta.persistence.Table;
+import com.baomidou.mybatisplus.annotation.FieldFill;
+import com.baomidou.mybatisplus.annotation.IdType;
+import com.baomidou.mybatisplus.annotation.TableField;
+import com.baomidou.mybatisplus.annotation.TableId;
+import com.baomidou.mybatisplus.annotation.TableName;
 
 import java.time.Instant;
 
-@Entity
-@Table(name = "document_chunks")
+@TableName("document_chunks")
 public class DocumentChunk {
 
-    @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    @TableId(type = IdType.AUTO)
     private Long id;
 
-    @Column(name = "document_id", nullable = false)
     private Long documentId;
 
-    @Column(name = "user_id", nullable = false)
     private Long userId;
 
-    @Column(name = "chunk_index", nullable = false)
     private Integer chunkIndex;
 
-    @Column(nullable = false, columnDefinition = "TEXT")
     private String content;
 
-    @Column(name = "page_start")
     private Integer pageStart;
 
-    @Column(name = "page_end")
     private Integer pageEnd;
 
-    @Column(name = "token_count")
     private Integer tokenCount;
 
-    @Column(name = "embedding_model_version", length = 50)
     private String embeddingModelVersion;
 
-    @Column(name = "created_at", nullable = false)
+    @TableField(fill = FieldFill.INSERT)
     private Instant createdAt;
-
-    @PrePersist
-    void onCreate() {
-        createdAt = Instant.now();
-    }
 
     public Long getId() {
         return id;

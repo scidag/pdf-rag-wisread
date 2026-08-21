@@ -1,11 +1,17 @@
 package com.wisread.repository;
 
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.wisread.entity.AnswerSource;
-import org.springframework.data.jpa.repository.JpaRepository;
+import org.apache.ibatis.annotations.Mapper;
 
 import java.util.List;
 
-public interface AnswerSourceRepository extends JpaRepository<AnswerSource, Long> {
+@Mapper
+public interface AnswerSourceRepository extends BaseRepository<AnswerSource> {
 
-    List<AnswerSource> findByMessageIdOrderById(Long messageId);
+    default List<AnswerSource> findByMessageIdOrderById(Long messageId) {
+        return selectList(new LambdaQueryWrapper<AnswerSource>()
+                .eq(AnswerSource::getMessageId, messageId)
+                .orderByAsc(AnswerSource::getId));
+    }
 }

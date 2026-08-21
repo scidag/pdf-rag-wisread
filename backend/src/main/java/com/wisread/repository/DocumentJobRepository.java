@@ -1,11 +1,16 @@
 package com.wisread.repository;
 
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.wisread.entity.DocumentJob;
-import org.springframework.data.jpa.repository.JpaRepository;
+import org.apache.ibatis.annotations.Mapper;
 
 import java.util.Optional;
 
-public interface DocumentJobRepository extends JpaRepository<DocumentJob, Long> {
+@Mapper
+public interface DocumentJobRepository extends BaseRepository<DocumentJob> {
 
-    Optional<DocumentJob> findByDocumentId(Long documentId);
+    default Optional<DocumentJob> findByDocumentId(Long documentId) {
+        return Optional.ofNullable(selectOne(new LambdaQueryWrapper<DocumentJob>()
+                .eq(DocumentJob::getDocumentId, documentId)));
+    }
 }

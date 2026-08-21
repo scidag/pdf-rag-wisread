@@ -1,48 +1,33 @@
 package com.wisread.entity;
 
-import jakarta.persistence.Column;
-import jakarta.persistence.Entity;
-import jakarta.persistence.GeneratedValue;
-import jakarta.persistence.GenerationType;
-import jakarta.persistence.Id;
-import jakarta.persistence.PrePersist;
-import jakarta.persistence.Table;
+import com.baomidou.mybatisplus.annotation.FieldFill;
+import com.baomidou.mybatisplus.annotation.IdType;
+import com.baomidou.mybatisplus.annotation.TableField;
+import com.baomidou.mybatisplus.annotation.TableId;
+import com.baomidou.mybatisplus.annotation.TableName;
 
 import java.time.Instant;
 
-@Entity
-@Table(name = "user_sessions")
+@TableName("user_sessions")
 public class UserSession {
 
-    @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    @TableId(type = IdType.AUTO)
     private Long id;
 
-    @Column(name = "user_id", nullable = false)
     private Long userId;
 
-    @Column(name = "refresh_token_hash", length = 255)
     private String refreshTokenHash;
 
-    @Column(name = "previous_refresh_token_hash", length = 255)
     private String previousRefreshTokenHash;
 
-    @Column(length = 100)
     private String device;
 
-    @Column(name = "ip_address", length = 50)
     private String ipAddress;
 
-    @Column(name = "expires_at")
     private Instant expiresAt;
 
-    @Column(name = "created_at", nullable = false)
+    @TableField(fill = FieldFill.INSERT)
     private Instant createdAt;
-
-    @PrePersist
-    void onCreate() {
-        createdAt = Instant.now();
-    }
 
     public Long getId() {
         return id;

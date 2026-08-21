@@ -1,62 +1,38 @@
 package com.wisread.entity;
 
-import jakarta.persistence.Column;
-import jakarta.persistence.Entity;
-import jakarta.persistence.GeneratedValue;
-import jakarta.persistence.GenerationType;
-import jakarta.persistence.Id;
-import jakarta.persistence.PrePersist;
-import jakarta.persistence.PreUpdate;
-import jakarta.persistence.Table;
+import com.baomidou.mybatisplus.annotation.FieldFill;
+import com.baomidou.mybatisplus.annotation.IdType;
+import com.baomidou.mybatisplus.annotation.TableField;
+import com.baomidou.mybatisplus.annotation.TableId;
+import com.baomidou.mybatisplus.annotation.TableName;
 
 import java.time.Instant;
 
-@Entity
-@Table(name = "document_jobs")
+@TableName("document_jobs")
 public class DocumentJob {
 
-    @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    @TableId(type = IdType.AUTO)
     private Long id;
 
-    @Column(name = "document_id", nullable = false)
     private Long documentId;
 
-    @Column(name = "job_type", nullable = false, length = 30)
     private String jobType = "PDF_INDEX";
 
-    @Column(nullable = false, length = 20)
     private String status = "PENDING";
 
-    @Column(nullable = false)
     private Integer attempt = 0;
 
-    @Column(name = "error_message")
     private String errorMessage;
 
-    @Column(name = "started_at")
     private Instant startedAt;
 
-    @Column(name = "finished_at")
     private Instant finishedAt;
 
-    @Column(name = "created_at", nullable = false)
+    @TableField(fill = FieldFill.INSERT)
     private Instant createdAt;
 
-    @Column(name = "updated_at", nullable = false)
+    @TableField(fill = FieldFill.INSERT_UPDATE)
     private Instant updatedAt;
-
-    @PrePersist
-    void onCreate() {
-        Instant now = Instant.now();
-        createdAt = now;
-        updatedAt = now;
-    }
-
-    @PreUpdate
-    void onUpdate() {
-        updatedAt = Instant.now();
-    }
 
     public Long getId() {
         return id;

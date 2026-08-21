@@ -40,7 +40,7 @@ public class ProjectService {
         project.setUserId(userId);
         project.setName(request.name().trim());
         project.setDescription(request.description());
-        projectRepository.save(project);
+        projectRepository.insert(project);
         return project;
     }
 
@@ -68,7 +68,7 @@ public class ProjectService {
         if (request.description() != null) {
             project.setDescription(request.description());
         }
-        projectRepository.save(project);
+        projectRepository.updateById(project);
         return project;
     }
 
@@ -76,7 +76,7 @@ public class ProjectService {
     public void delete(Long userId, Long projectId) {
         Project project = findOwnedProject(userId, projectId);
         project.setDeletedAt(Instant.now());
-        projectRepository.save(project);
+        projectRepository.updateById(project);
     }
 
     @Transactional
@@ -91,7 +91,7 @@ public class ProjectService {
         Project project = projectRepository.findByUserIdAndIdAndDeletedAtIsNotNull(userId, projectId)
                 .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "project not found"));
         project.setDeletedAt(null);
-        projectRepository.save(project);
+        projectRepository.updateById(project);
         return project;
     }
 

@@ -47,8 +47,8 @@ class ProjectServiceTest {
 
     @Test
     void createUsesTrimmedName() {
-        when(projectRepository.save(org.mockito.ArgumentMatchers.any(Project.class)))
-                .thenAnswer(invocation -> invocation.getArgument(0));
+        when(projectRepository.insert(org.mockito.ArgumentMatchers.any(Project.class)))
+                .thenReturn(1);
 
         Project project = projectService.create(1L, new CreateProjectRequest("  新项目  ", null));
 
@@ -86,7 +86,7 @@ class ProjectServiceTest {
         projectService.delete(1L, 7L);
 
         assertThat(project.getDeletedAt()).isNotNull();
-        verify(projectRepository).save(project);
+        verify(projectRepository).updateById(project);
     }
 
     @Test
@@ -104,8 +104,8 @@ class ProjectServiceTest {
 
         assertThat(first.getDeletedAt()).isNotNull();
         assertThat(second.getDeletedAt()).isNotNull();
-        verify(projectRepository).save(first);
-        verify(projectRepository).save(second);
+        verify(projectRepository).updateById(first);
+        verify(projectRepository).updateById(second);
     }
 
     @Test
@@ -119,6 +119,6 @@ class ProjectServiceTest {
         projectService.restore(1L, 7L);
 
         assertThat(project.getDeletedAt()).isNull();
-        verify(projectRepository).save(project);
+        verify(projectRepository).updateById(project);
     }
 }

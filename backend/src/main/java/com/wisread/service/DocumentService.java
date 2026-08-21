@@ -81,12 +81,12 @@ public class DocumentService {
         document.setFileKey(fileKey);
         document.setFileSize((long) bytes.length);
         document.setStatus("UPLOADED");
-        documentRepository.save(document);
+        documentRepository.insert(document);
 
         DocumentJob job = new DocumentJob();
         job.setDocumentId(document.getId());
         job.setStatus("PENDING");
-        documentJobRepository.save(job);
+        documentJobRepository.insert(job);
 
         documentProcessingService.processDocument(document.getId(), userId);
         return toResponse(document);
@@ -119,7 +119,7 @@ public class DocumentService {
     public void delete(Long userId, Long documentId) {
         Document document = findOwnedDocument(userId, documentId);
         minioStorageService.deleteObject(document.getFileKey());
-        documentRepository.delete(document);
+        documentRepository.deleteById(document.getId());
     }
 
     private Document findOwnedDocument(Long userId, Long documentId) {
