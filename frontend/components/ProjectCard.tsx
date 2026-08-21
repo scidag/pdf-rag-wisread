@@ -1,22 +1,47 @@
 "use client";
 
-import { ArrowRight, FileText, MessageSquare } from "lucide-react";
+import { ArrowRight, FileText, MessageSquare, Trash2 } from "lucide-react";
 import type { Project } from "@/lib/types";
 
 interface ProjectCardProps {
   project: Project;
+  selected: boolean;
+  onToggleSelect: () => void;
+  onDelete: () => void;
   onClick: () => void;
 }
 
-export default function ProjectCard({ project, onClick }: ProjectCardProps) {
+export default function ProjectCard({
+  project,
+  selected,
+  onToggleSelect,
+  onDelete,
+  onClick
+}: ProjectCardProps) {
   return (
-    <button
-      type="button"
+    <div
+      role="button"
+      tabIndex={0}
       onClick={onClick}
+      onKeyDown={(event) => {
+        if (event.target !== event.currentTarget) return;
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          onClick();
+        }
+      }}
       className="group relative flex flex-col gap-[14px] overflow-hidden rounded-[14px] border border-border bg-[rgba(6,12,26,0.74)] p-[18px] text-left transition hover:-translate-y-0.5 hover:border-[rgba(80,140,255,0.38)] hover:bg-[rgba(80,140,255,0.06)]"
     >
       <div className="pointer-events-none absolute -right-6 -top-6 h-[90px] w-[90px] rounded-full bg-[radial-gradient(circle,rgba(80,140,255,0.16),transparent_68%)]" />
       <div className="flex items-center gap-3">
+        <input
+          type="checkbox"
+          checked={selected}
+          onChange={onToggleSelect}
+          onClick={(event) => event.stopPropagation()}
+          aria-label={`选择项目 ${project.name}`}
+          className="h-4 w-4 shrink-0 cursor-pointer accent-[#3a7fff]"
+        />
         <span className="flex h-[42px] w-[42px] shrink-0 items-center justify-center rounded-[11px] border border-[rgba(80,140,255,0.3)] bg-gradient-to-br from-[#17365f] to-[#0d1f3d] text-[rgba(150,200,255,0.9)]">
           <FileText className="h-5 w-5" />
         </span>
@@ -47,10 +72,23 @@ export default function ProjectCard({ project, onClick }: ProjectCardProps) {
             {project.conversationCount}
           </span>
         </div>
-        <span className="inline-flex items-center gap-1 rounded-[7px] px-[9px] py-[5px] text-[0.72rem] font-bold text-[rgba(110,165,255,0.85)] transition group-hover:bg-[rgba(80,140,255,0.14)]">
-          进入 <ArrowRight className="h-3.5 w-3.5" />
+        <span className="flex items-center gap-[6px]">
+          <button
+            type="button"
+            onClick={(event) => {
+              event.stopPropagation();
+              onDelete();
+            }}
+            aria-label={`删除项目 ${project.name}`}
+            className="flex h-7 w-7 items-center justify-center rounded-[7px] text-[rgba(160,195,240,0.42)] transition hover:bg-[rgba(255,80,100,0.12)] hover:text-[#ff7a8a]"
+          >
+            <Trash2 className="h-3.5 w-3.5" />
+          </button>
+          <span className="inline-flex items-center gap-1 rounded-[7px] px-[9px] py-[5px] text-[0.72rem] font-bold text-[rgba(110,165,255,0.85)] transition group-hover:bg-[rgba(80,140,255,0.14)]">
+            进入 <ArrowRight className="h-3.5 w-3.5" />
+          </span>
         </span>
       </div>
-    </button>
+    </div>
   );
 }

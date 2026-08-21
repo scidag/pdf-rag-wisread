@@ -8,9 +8,13 @@ import java.util.Optional;
 
 public interface ProjectRepository extends JpaRepository<Project, Long> {
 
-    List<Project> findByUserIdOrderByCreatedAtDesc(Long userId);
+    List<Project> findByUserIdAndDeletedAtIsNullOrderByCreatedAtDesc(Long userId);
 
-    Optional<Project> findByUserIdAndId(Long userId, Long id);
+    List<Project> findByUserIdAndDeletedAtIsNotNullOrderByDeletedAtDesc(Long userId);
 
-    long countByUserId(Long userId);
+    Optional<Project> findByUserIdAndIdAndDeletedAtIsNull(Long userId, Long id);
+
+    Optional<Project> findByUserIdAndIdAndDeletedAtIsNotNull(Long userId, Long id);
+
+    long countByUserIdAndDeletedAtIsNull(Long userId);
 }

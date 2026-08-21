@@ -47,7 +47,7 @@ public class DocumentService {
         if (projectId == null) {
             throw new ApiException(HttpStatus.BAD_REQUEST, "projectId is required");
         }
-        projectRepository.findByUserIdAndId(userId, projectId)
+        projectRepository.findByUserIdAndIdAndDeletedAtIsNull(userId, projectId)
                 .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "project not found"));
 
         if (file == null || file.isEmpty()) {
@@ -94,7 +94,7 @@ public class DocumentService {
 
     @Transactional(readOnly = true)
     public List<DocumentResponse> listByProject(Long userId, Long projectId) {
-        projectRepository.findByUserIdAndId(userId, projectId)
+        projectRepository.findByUserIdAndIdAndDeletedAtIsNull(userId, projectId)
                 .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "project not found"));
         return documentRepository.findByProjectIdOrderByCreatedAtDesc(projectId)
                 .stream()
@@ -123,8 +123,13 @@ public class DocumentService {
     }
 
     private Document findOwnedDocument(Long userId, Long documentId) {
-        return documentRepository.findByUserIdAndId(userId, documentId)
+        Document document = documentRepository.findByUserIdAndId(userId, documentId)
                 .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "document not found"));
+        if (document.getProjectId() != null) {
+            projectRepository.findByUserIdAndIdAndDeletedAtIsNull(userId, document.getProjectId())
+                    .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "project not found"));
+        }
+        return document;
     }
 
     private boolean isPdf(byte[] bytes) {

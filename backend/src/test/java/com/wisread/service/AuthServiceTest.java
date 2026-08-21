@@ -20,11 +20,13 @@ import org.springframework.test.util.ReflectionTestUtils;
 
 import java.time.Duration;
 import java.util.Optional;
+import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -57,8 +59,8 @@ class AuthServiceTest {
     void registerCreatesUserAndReturnsTokens() {
         when(userRepository.existsByUsername("alice")).thenReturn(false);
         when(userRepository.existsByEmail("alice@example.com")).thenReturn(false);
-        when(jwtService.createAccessToken(1L, "alice")).thenReturn("access");
-        when(jwtService.createRefreshToken(1L, "alice")).thenReturn("refresh");
+        when(jwtService.createAccessToken(1L, "alice", Set.of("USER"))).thenReturn("access");
+        when(jwtService.createRefreshToken(1L, "alice", Set.of("USER"))).thenReturn("refresh");
         when(userRepository.save(any(User.class))).thenAnswer(invocation -> {
             User user = invocation.getArgument(0);
             ReflectionTestUtils.setField(user, "id", 1L);
@@ -92,8 +94,8 @@ class AuthServiceTest {
         user.setEmail("alice@example.com");
         user.setPasswordHash(new BCryptPasswordEncoder().encode("password123"));
         when(userRepository.findByEmail("alice@example.com")).thenReturn(Optional.of(user));
-        when(jwtService.createAccessToken(1L, "alice")).thenReturn("access");
-        when(jwtService.createRefreshToken(1L, "alice")).thenReturn("refresh");
+        when(jwtService.createAccessToken(1L, "alice", Set.of("USER"))).thenReturn("access");
+        when(jwtService.createRefreshToken(1L, "alice", Set.of("USER"))).thenReturn("refresh");
 
         AuthResponse response = authService.login(
                 new LoginRequest("alice@example.com", "password123"),
@@ -119,6 +121,34 @@ class AuthServiceTest {
                 "127.0.0.1"
         )).isInstanceOf(ApiException.class)
                 .hasMessage("invalid credentials");
+    }
+
+    @Test
+    void refreshDetectsReusedTokenAndRevokesSessions() {
+        when(userSessionRepository.findByRefreshTokenHashAndExpiresAtAfter(anyString(), any()))
+                .thenReturn(Optional.empty());
+        UserSession stale = new UserSession();
+        stale.setUserId(1L);
+        when(userSessionRepository.findByPreviousRefreshTokenHashAndExpiresAtAfter(anyString(), any()))
+                .thenReturn(Optional.of(stale));
+
+        assertThatThrownBy(() -> authService.refresh("old-refresh-token", "Chrome", "127.0.0.1"))
+                .isInstanceOf(ApiException.class)
+                .hasMessage("refresh token reuse detected");
+        verify(userSessionRepository).deleteByUserId(1L);
+    }
+
+    @Test
+    void refreshRejectsUnknownTokenWithoutRevocation() {
+        when(userSessionRepository.findByRefreshTokenHashAndExpiresAtAfter(anyString(), any()))
+                .thenReturn(Optional.empty());
+        when(userSessionRepository.findByPreviousRefreshTokenHashAndExpiresAtAfter(anyString(), any()))
+                .thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> authService.refresh("unknown-token", "Chrome", "127.0.0.1"))
+                .isInstanceOf(ApiException.class)
+                .hasMessage("invalid refresh token");
+        verify(userSessionRepository, never()).deleteByUserId(any(Long.class));
     }
 
     private User userWithId(Long id) {

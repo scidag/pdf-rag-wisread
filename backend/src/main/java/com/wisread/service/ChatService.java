@@ -91,7 +91,7 @@ public class ChatService {
             if (projectId == null) {
                 throw new ApiException(HttpStatus.BAD_REQUEST, "conversation has no project");
             }
-            projectRepository.findByUserIdAndId(userId, projectId)
+            projectRepository.findByUserIdAndIdAndDeletedAtIsNull(userId, projectId)
                     .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "project not found"));
 
             List<com.wisread.entity.Message> history = messageRepository
@@ -126,6 +126,9 @@ public class ChatService {
             StringBuilder answer = new StringBuilder();
             chatModel.stream(prompt).subscribe(
                     response -> {
+                        if (response.getResults().isEmpty()) {
+                            return;
+                        }
                         String token = response.getResult().getOutput().getText();
                         if (token != null && !token.isBlank()) {
                             answer.append(token);

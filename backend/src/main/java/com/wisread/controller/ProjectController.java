@@ -1,5 +1,6 @@
 package com.wisread.controller;
 
+import com.wisread.dto.BatchDeleteRequest;
 import com.wisread.dto.CreateProjectRequest;
 import com.wisread.dto.ProjectResponse;
 import com.wisread.dto.UpdateProjectRequest;
@@ -47,6 +48,13 @@ public class ProjectController {
         return ResponseEntity.ok(projects.stream().map(p -> toResponse(userId, p)).toList());
     }
 
+    @GetMapping("/deleted")
+    public ResponseEntity<List<ProjectResponse>> listDeleted(Authentication authentication) {
+        Long userId = (Long) authentication.getPrincipal();
+        List<Project> projects = projectService.listDeleted(userId);
+        return ResponseEntity.ok(projects.stream().map(p -> toResponse(userId, p)).toList());
+    }
+
     @GetMapping("/{projectId}")
     public ResponseEntity<ProjectResponse> get(
             @PathVariable Long projectId,
@@ -68,6 +76,16 @@ public class ProjectController {
         return ResponseEntity.ok(toResponse(userId, project));
     }
 
+    @PatchMapping("/{projectId}/restore")
+    public ResponseEntity<ProjectResponse> restore(
+            @PathVariable Long projectId,
+            Authentication authentication
+    ) {
+        Long userId = (Long) authentication.getPrincipal();
+        Project project = projectService.restore(userId, projectId);
+        return ResponseEntity.ok(toResponse(userId, project));
+    }
+
     @DeleteMapping("/{projectId}")
     public ResponseEntity<Void> delete(
             @PathVariable Long projectId,
@@ -75,6 +93,16 @@ public class ProjectController {
     ) {
         Long userId = (Long) authentication.getPrincipal();
         projectService.delete(userId, projectId);
+        return ResponseEntity.noContent().build();
+    }
+
+    @PostMapping("/batch-delete")
+    public ResponseEntity<Void> deleteBatch(
+            @Valid @RequestBody BatchDeleteRequest request,
+            Authentication authentication
+    ) {
+        Long userId = (Long) authentication.getPrincipal();
+        projectService.deleteBatch(userId, request.ids());
         return ResponseEntity.noContent().build();
     }
 

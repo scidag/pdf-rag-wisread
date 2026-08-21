@@ -54,7 +54,7 @@ public class ConversationService {
 
     @Transactional
     public ConversationResponse create(Long userId, CreateConversationRequest request) {
-        Project project = projectRepository.findByUserIdAndId(userId, request.projectId())
+        Project project = projectRepository.findByUserIdAndIdAndDeletedAtIsNull(userId, request.projectId())
                 .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "project not found"));
 
         Conversation conversation = new Conversation();
@@ -69,7 +69,7 @@ public class ConversationService {
 
     @Transactional(readOnly = true)
     public List<ConversationResponse> list(Long userId, Long projectId) {
-        projectRepository.findByUserIdAndId(userId, projectId)
+        projectRepository.findByUserIdAndIdAndDeletedAtIsNull(userId, projectId)
                 .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "project not found"));
         return conversationRepository.findByUserIdAndProjectIdOrderByUpdatedAtDesc(userId, projectId)
                 .stream()
@@ -90,8 +90,13 @@ public class ConversationService {
     }
 
     public Conversation findOwnedConversation(Long userId, Long conversationId) {
-        return conversationRepository.findByUserIdAndId(userId, conversationId)
+        Conversation conversation = conversationRepository.findByUserIdAndId(userId, conversationId)
                 .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "conversation not found"));
+        if (conversation.getProjectId() != null) {
+            projectRepository.findByUserIdAndIdAndDeletedAtIsNull(userId, conversation.getProjectId())
+                    .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "project not found"));
+        }
+        return conversation;
     }
 
     private MessageResponse toResponse(Message message, Map<Long, String> documentNameCache) {

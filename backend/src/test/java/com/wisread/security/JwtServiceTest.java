@@ -6,6 +6,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import java.time.Duration;
+import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -25,11 +26,30 @@ class JwtServiceTest {
 
     @Test
     void createAndParseAccessTokenRoundTripsUserId() {
-        String token = jwtService.createAccessToken(42L, "alice");
+        String token = jwtService.createAccessToken(42L, "alice", Set.of("USER", "ADMIN"));
 
         Long userId = jwtService.parseUserId(token);
 
         assertThat(userId).isEqualTo(42L);
+    }
+
+    @Test
+    void parseAuthoritiesReturnsRolesWithPrefix() {
+        String token = jwtService.createAccessToken(42L, "alice", Set.of("USER", "ADMIN"));
+
+        assertThat(jwtService.parseAuthorities(token))
+                .extracting(authority -> authority.getAuthority())
+                .containsExactlyInAnyOrder("ROLE_USER", "ROLE_ADMIN");
+    }
+
+    @Test
+    void accessTokenExposesJtiAndTtl() {
+        String token = jwtService.createAccessToken(42L, "alice", Set.of("USER"));
+
+        assertThat(jwtService.parseJti(token)).isNotBlank();
+        assertThat(jwtService.parseRemainingTtl(token))
+                .isPositive()
+                .isLessThanOrEqualTo(Duration.ofMinutes(15));
     }
 
     @Test

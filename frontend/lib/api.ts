@@ -90,6 +90,23 @@ export function deleteProject(projectId: number) {
   return apiFetch<void>(`/projects/${projectId}`, { method: "DELETE" });
 }
 
+export function deleteProjects(projectIds: number[]) {
+  return apiFetch<void>("/projects/batch-delete", {
+    method: "POST",
+    body: JSON.stringify({ ids: projectIds })
+  });
+}
+
+export function listDeletedProjects() {
+  return apiFetch<Project[]>("/projects/deleted");
+}
+
+export function restoreProject(projectId: number) {
+  return apiFetch<Project>(`/projects/${projectId}/restore`, {
+    method: "PATCH"
+  });
+}
+
 /* ---------- Document ---------- */
 
 export function listDocuments(projectId: number) {
