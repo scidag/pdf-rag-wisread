@@ -2,6 +2,7 @@ import { API_BASE } from "./config";
 import type { AuthResponse, User } from "./types";
 
 let accessToken: string | null = null;
+let refreshPromise: Promise<User | null> | null = null;
 
 export function getAccessToken() {
   return accessToken;
@@ -11,7 +12,16 @@ export function setAccessToken(token: string | null) {
   accessToken = token;
 }
 
-export async function restoreSession(): Promise<User | null> {
+export function restoreSession(): Promise<User | null> {
+  if (!refreshPromise) {
+    refreshPromise = doRefresh().finally(() => {
+      refreshPromise = null;
+    });
+  }
+  return refreshPromise;
+}
+
+async function doRefresh(): Promise<User | null> {
   try {
     const response = await fetch(`${API_BASE}/auth/refresh`, {
       method: "POST",

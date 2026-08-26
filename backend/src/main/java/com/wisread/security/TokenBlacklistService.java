@@ -1,7 +1,5 @@
 package com.wisread.security;
 
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 
@@ -14,7 +12,6 @@ import java.time.Duration;
 @Service
 public class TokenBlacklistService {
 
-    private static final Logger log = LoggerFactory.getLogger(TokenBlacklistService.class);
     private static final String KEY_PREFIX = "wisread:token:blacklist:";
 
     private final StringRedisTemplate redisTemplate;
@@ -25,27 +22,24 @@ public class TokenBlacklistService {
         this.jwtService = jwtService;
     }
 
-    /** 将 access token 加入黑名单，TTL 取 token 剩余有效期；Redis 不可用时降级（仅告警，不阻塞登出）。 */
+    /** 将 access token 加入黑名单，TTL 取 token 剩余有效期；Redis 不可用时抛出异常，登出失败而非静默放行。 */
     public void blacklist(String token) {
+        Duration ttl;
         try {
-            Duration ttl = jwtService.parseRemainingTtl(token);
-            if (ttl.isZero() || ttl.isNegative()) {
-                return;
-            }
-            redisTemplate.opsForValue().set(key(token), "1", ttl);
+            ttl = jwtService.parseRemainingTtl(token);
         } catch (Exception e) {
-            log.warn("Failed to blacklist access token: {}", e.getMessage());
+            // 无效或已过期的 token 无需拉黑，也未触碰 Redis
+            return;
         }
+        if (ttl.isZero() || ttl.isNegative()) {
+            return;
+        }
+        redisTemplate.opsForValue().set(key(token), "1", ttl);
     }
 
-    /** 校验 token 是否被拉黑；Redis 不可用时 fail-open 并记录告警。 */
+    /** 校验 token 是否被拉黑；Redis 不可用时抛异常，由过滤器按未认证处理（fail-closed）。 */
     public boolean isBlacklisted(String token) {
-        try {
-            return Boolean.TRUE.equals(redisTemplate.hasKey(key(token)));
-        } catch (Exception e) {
-            log.warn("Redis unavailable, skip blacklist check: {}", e.getMessage());
-            return false;
-        }
+        return Boolean.TRUE.equals(redisTemplate.hasKey(key(token)));
     }
 
     private String key(String token) {

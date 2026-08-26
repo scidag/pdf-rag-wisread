@@ -72,6 +72,9 @@ public class AuthServiceImpl implements AuthService {
         if (!passwordEncoder.matches(request.password(), user.getPasswordHash())) {
             throw new ApiException(HttpStatus.UNAUTHORIZED, "invalid credentials");
         }
+        if (user.getStatus() == null || user.getStatus() != 1) {
+            throw new ApiException(HttpStatus.UNAUTHORIZED, "account disabled");
+        }
         return issueTokens(user, device, ipAddress);
     }
 

@@ -354,20 +354,6 @@ export default function AuthScreen({ initialTab = "signin" }: AuthScreenProps) {
                       </button>
                     </div>
 
-                    {tab === "signin" && (
-                      <div style={{ textAlign: "right", marginTop: -2 }}>
-                        <a
-                          href="#"
-                          style={{
-                            color: "rgba(110,165,255,0.72)",
-                            fontSize: "0.75rem"
-                          }}
-                        >
-                          Forgot password?
-                        </a>
-                      </div>
-                    )}
-
                     {error && (
                       <p
                         className="rounded-md px-3 py-2 text-sm"

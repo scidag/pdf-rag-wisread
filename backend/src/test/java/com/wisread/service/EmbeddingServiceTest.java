@@ -1,5 +1,6 @@
 package com.wisread.service;
 
+import com.wisread.service.impl.EmbeddingServiceImpl;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.ai.embedding.EmbeddingModel;
@@ -31,7 +32,7 @@ class EmbeddingServiceTest {
         });
 
         UsageLogService usageLogService = mock(UsageLogService.class);
-        EmbeddingService service = new EmbeddingService(model, usageLogService, new TokenCounter(), "test-embedding");
+        EmbeddingService service = new EmbeddingServiceImpl(model, usageLogService, new TokenCounter(), "test-embedding");
         List<String> texts = new ArrayList<>();
         for (int i = 0; i < 45; i++) {
             texts.add("text-" + i);

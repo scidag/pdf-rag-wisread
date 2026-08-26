@@ -97,37 +97,43 @@ public class ChatServiceImpl implements ChatService {
     }
 
     public SseEmitter ask(Long userId, Long conversationId, ChatRequest request) {
+        Conversation conversation = requireOwnedConversation(userId, conversationId);
         SseEmitter emitter = new SseEmitter(120_000L);
-        executor.execute(() -> processAsk(userId, conversationId, request, emitter));
+        executor.execute(() -> processAsk(conversation, request, emitter));
         return emitter;
     }
 
-    private void processAsk(Long userId, Long conversationId, ChatRequest request, SseEmitter emitter) {
+    private Conversation requireOwnedConversation(Long userId, Long conversationId) {
+        Conversation conversation = conversationRepository.findByUserIdAndId(userId, conversationId)
+                .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "conversation not found"));
+        Long projectId = conversation.getProjectId();
+        if (projectId == null) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "conversation has no project");
+        }
+        projectRepository.findByUserIdAndIdAndDeletedAtIsNull(userId, projectId)
+                .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "project not found"));
+        return conversation;
+    }
+
+    private void processAsk(Conversation conversation, ChatRequest request, SseEmitter emitter) {
         try {
-            Conversation conversation = conversationRepository.findByUserIdAndId(userId, conversationId)
-                    .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "conversation not found"));
             Long projectId = conversation.getProjectId();
-            if (projectId == null) {
-                throw new ApiException(HttpStatus.BAD_REQUEST, "conversation has no project");
-            }
-            projectRepository.findByUserIdAndIdAndDeletedAtIsNull(userId, projectId)
-                    .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "project not found"));
 
             List<com.wisread.entity.Message> history = messageRepository
-                    .findTop10ByConversationIdOrderByCreatedAtDesc(conversationId)
+                    .findTop10ByConversationIdOrderByCreatedAtDesc(conversation.getId())
                     .reversed();
 
             com.wisread.entity.Message userMessage = new com.wisread.entity.Message();
-            userMessage.setConversationId(conversationId);
+            userMessage.setConversationId(conversation.getId());
             userMessage.setRole("user");
             userMessage.setContent(request.content());
             userMessage.setStatus("COMPLETED");
             messageRepository.insert(userMessage);
 
-            String query = queryRewriteService.rewrite(request.content(), history, userId);
-            float[] queryEmbedding = embeddingService.embed(List.of(query), userId).get(0);
+            String query = queryRewriteService.rewrite(request.content(), history, conversation.getUserId());
+            float[] queryEmbedding = embeddingService.embed(List.of(query), conversation.getUserId()).get(0);
             List<ChunkSearchResult> candidates = vectorIndexingService.searchWithContent(
-                    userId,
+                    conversation.getUserId(),
                     projectId,
                     queryEmbedding,
                     10
@@ -137,7 +143,7 @@ public class ChatServiceImpl implements ChatService {
                     chunks.stream().map(ChunkSearchResult::distance).toList());
 
             if (chunks.isEmpty() || chunks.get(0).distance() > DISTANCE_THRESHOLD) {
-                sendNoAnswer(conversationId, emitter);
+                sendNoAnswer(conversation.getId(), emitter);
                 return;
             }
 

@@ -1,6 +1,7 @@
 package com.wisread.service;
 
 import com.wisread.model.ChunkSearchResult;
+import com.wisread.service.impl.VectorIndexingServiceImpl;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -30,7 +31,7 @@ class VectorIndexingServiceTest {
 
     @BeforeEach
     void setUp() {
-        vectorIndexingService = new VectorIndexingService(jdbcTemplate);
+        vectorIndexingService = new VectorIndexingServiceImpl(jdbcTemplate);
     }
 
     @Test

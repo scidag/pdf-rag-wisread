@@ -22,13 +22,19 @@ import java.util.UUID;
 public class JwtService {
 
     private static final String CLAIM_ROLES = "roles";
+    private static final String DEV_SECRET = "wisread-dev-secret-change-me-please-32bytes";
 
     private final SecretKey key;
     private final WisreadJwtProperties properties;
 
     public JwtService(WisreadJwtProperties properties) {
         this.properties = properties;
-        this.key = Keys.hmacShaKeyFor(properties.getSecret().getBytes(StandardCharsets.UTF_8));
+        String secret = properties.getSecret();
+        if (secret == null || secret.isBlank() || DEV_SECRET.equals(secret)) {
+            throw new IllegalStateException(
+                    "JWT_SECRET must be set to a non-default value of at least 32 bytes");
+        }
+        this.key = Keys.hmacShaKeyFor(secret.getBytes(StandardCharsets.UTF_8));
     }
 
     public String createAccessToken(Long userId, String username, Set<String> roles) {

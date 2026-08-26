@@ -2,6 +2,7 @@ package com.wisread.service;
 
 import com.wisread.model.PageText;
 import com.wisread.model.TextChunk;
+import com.wisread.service.impl.ChunkingServiceImpl;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
@@ -10,7 +11,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 class ChunkingServiceTest {
 
-    private final ChunkingService chunkingService = new ChunkingService(new TokenCounter());
+    private final ChunkingService chunkingService = new ChunkingServiceImpl(new TokenCounter());
 
     @Test
     void longPageProducesMultipleChunksWithPageMetadata() {

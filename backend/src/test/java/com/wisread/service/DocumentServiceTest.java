@@ -6,6 +6,7 @@ import com.wisread.exception.ApiException;
 import com.wisread.repository.DocumentJobRepository;
 import com.wisread.repository.DocumentRepository;
 import com.wisread.repository.ProjectRepository;
+import com.wisread.service.impl.DocumentServiceImpl;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -47,7 +48,7 @@ class DocumentServiceTest {
 
     @BeforeEach
     void setUp() {
-        documentService = new DocumentService(
+        documentService = new DocumentServiceImpl(
                 documentRepository,
                 documentJobRepository,
                 projectRepository,

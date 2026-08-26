@@ -10,6 +10,7 @@ import com.wisread.exception.ApiException;
 import com.wisread.repository.UserRepository;
 import com.wisread.repository.UserSessionRepository;
 import com.wisread.security.JwtService;
+import com.wisread.service.impl.AuthServiceImpl;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -52,7 +53,7 @@ class AuthServiceTest {
         jwtProperties.setSecret("test-secret");
         jwtProperties.setAccessTokenTtl(Duration.ofMinutes(15));
         jwtProperties.setRefreshTokenTtl(Duration.ofDays(7));
-        authService = new AuthService(userRepository, userSessionRepository, jwtService, jwtProperties);
+        authService = new AuthServiceImpl(userRepository, userSessionRepository, jwtService, jwtProperties);
     }
 
     @Test
@@ -121,6 +122,22 @@ class AuthServiceTest {
                 "127.0.0.1"
         )).isInstanceOf(ApiException.class)
                 .hasMessage("invalid credentials");
+    }
+
+    @Test
+    void loginRejectsDisabledUser() {
+        User user = userWithId(1L);
+        user.setEmail("alice@example.com");
+        user.setPasswordHash(new BCryptPasswordEncoder().encode("password123"));
+        user.setStatus((short) 0);
+        when(userRepository.findByEmail("alice@example.com")).thenReturn(Optional.of(user));
+
+        assertThatThrownBy(() -> authService.login(
+                new LoginRequest("alice@example.com", "password123"),
+                "Chrome",
+                "127.0.0.1"
+        )).isInstanceOf(ApiException.class)
+                .hasMessage("account disabled");
     }
 
     @Test

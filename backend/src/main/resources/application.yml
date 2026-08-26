@@ -44,6 +44,7 @@ mybatis-plus:
 
 server:
   port: 8080
+  forward-headers-strategy: framework
   tomcat:
     # 默认 2MB：超限请求会被直接断连（浏览器表现为 Failed to fetch / ERR_CONNECTION_RESET），
     # 调大后服务端能吞掉剩余请求体并正常返回 413 JSON。

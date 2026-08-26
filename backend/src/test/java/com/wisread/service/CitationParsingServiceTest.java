@@ -2,6 +2,7 @@ package com.wisread.service;
 
 import com.wisread.dto.SourceResponse;
 import com.wisread.model.ChunkSearchResult;
+import com.wisread.service.impl.CitationParsingServiceImpl;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
@@ -10,7 +11,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 class CitationParsingServiceTest {
 
-    private final CitationParsingService citationParsingService = new CitationParsingService();
+    private final CitationParsingService citationParsingService = new CitationParsingServiceImpl();
 
     @Test
     void keepsValidMarkersAndDropsInvalidOnes() {

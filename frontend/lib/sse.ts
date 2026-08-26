@@ -1,5 +1,5 @@
 import { API_BASE } from "./config";
-import { getAccessToken } from "./auth-store";
+import { getAccessToken, restoreSession } from "./auth-store";
 import type { ChatDonePayload } from "./api";
 
 interface StreamCallbacks {
@@ -12,19 +12,10 @@ export async function streamChat(
   content: string,
   callbacks: StreamCallbacks
 ) {
-  const token = getAccessToken();
-  const response = await fetch(
-    `${API_BASE}/conversations/${conversationId}/messages`,
-    {
-      method: "POST",
-      credentials: "include",
-      headers: {
-        "Content-Type": "application/json",
-        ...(token ? { Authorization: `Bearer ${token}` } : {})
-      },
-      body: JSON.stringify({ content })
-    }
-  );
+  let response = await postChat(conversationId, content);
+  if (response.status === 401 && (await restoreSession())) {
+    response = await postChat(conversationId, content);
+  }
 
   if (!response.ok || !response.body) {
     const error = await response.json().catch(() => null);
@@ -49,6 +40,22 @@ export async function streamChat(
       separatorIndex = buffer.indexOf("\n\n");
     }
   }
+}
+
+function postChat(conversationId: number, content: string) {
+  const token = getAccessToken();
+  return fetch(
+    `${API_BASE}/conversations/${conversationId}/messages`,
+    {
+      method: "POST",
+      credentials: "include",
+      headers: {
+        "Content-Type": "application/json",
+        ...(token ? { Authorization: `Bearer ${token}` } : {})
+      },
+      body: JSON.stringify({ content })
+    }
+  );
 }
 
 function handleEvent(rawEvent: string, callbacks: StreamCallbacks) {

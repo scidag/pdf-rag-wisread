@@ -23,6 +23,7 @@ import org.springframework.web.bind.annotation.RestController;
 public class AuthController {
 
     public static final String REFRESH_COOKIE = "wisread_refresh";
+    private static final String REFRESH_COOKIE_PATH = "/api/v1/auth";
 
     private final AuthService authService;
     private final TokenBlacklistService tokenBlacklistService;
@@ -75,7 +76,8 @@ public class AuthController {
         authService.logout(readRefreshCookie(httpRequest));
         Cookie cookie = new Cookie(REFRESH_COOKIE, "");
         cookie.setHttpOnly(true);
-        cookie.setPath("/api/v1/auth/refresh");
+        cookie.setPath(REFRESH_COOKIE_PATH);
+        cookie.setAttribute("SameSite", "Strict");
         cookie.setMaxAge(0);
         response.addCookie(cookie);
         return ResponseEntity.noContent().build();
@@ -93,7 +95,8 @@ public class AuthController {
         Cookie cookie = new Cookie(REFRESH_COOKIE, authResponse.refreshToken());
         cookie.setHttpOnly(true);
         cookie.setSecure(request.isSecure());
-        cookie.setPath("/api/v1/auth/refresh");
+        cookie.setPath(REFRESH_COOKIE_PATH);
+        cookie.setAttribute("SameSite", "Strict");
         cookie.setMaxAge(7 * 24 * 3600);
         response.addCookie(cookie);
     }

@@ -57,4 +57,17 @@ class JwtServiceTest {
         assertThatThrownBy(() -> jwtService.parseUserId("not-a-jwt"))
                 .isInstanceOf(JwtException.class);
     }
+
+    @Test
+    void rejectsMissingOrDefaultSecret() {
+        WisreadJwtProperties blank = new WisreadJwtProperties();
+        blank.setSecret("   ");
+        assertThatThrownBy(() -> new JwtService(blank))
+                .isInstanceOf(IllegalStateException.class);
+
+        WisreadJwtProperties defaults = new WisreadJwtProperties();
+        defaults.setSecret("wisread-dev-secret-change-me-please-32bytes");
+        assertThatThrownBy(() -> new JwtService(defaults))
+                .isInstanceOf(IllegalStateException.class);
+    }
 }

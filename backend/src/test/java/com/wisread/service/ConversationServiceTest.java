@@ -11,6 +11,7 @@ import com.wisread.repository.DocumentChunkRepository;
 import com.wisread.repository.DocumentRepository;
 import com.wisread.repository.MessageRepository;
 import com.wisread.repository.ProjectRepository;
+import com.wisread.service.impl.ConversationServiceImpl;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -55,7 +56,7 @@ class ConversationServiceTest {
 
     @BeforeEach
     void setUp() {
-        conversationService = new ConversationService(
+        conversationService = new ConversationServiceImpl(
                 conversationRepository,
                 projectRepository,
                 documentRepository,

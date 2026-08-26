@@ -1,6 +1,7 @@
 package com.wisread.service;
 
 import com.wisread.model.PageText;
+import com.wisread.service.impl.PdfParsingServiceImpl;
 import org.apache.pdfbox.pdmodel.PDDocument;
 import org.apache.pdfbox.pdmodel.PDPage;
 import org.apache.pdfbox.pdmodel.PDPageContentStream;
@@ -17,7 +18,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 class PdfParsingServiceTest {
 
-    private final PdfParsingService pdfParsingService = new PdfParsingService();
+    private final PdfParsingService pdfParsingService = new PdfParsingServiceImpl();
 
     @Test
     void extractsTextFromGeneratedPdf() throws Exception {
