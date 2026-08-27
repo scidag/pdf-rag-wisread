@@ -7,6 +7,7 @@ import java.time.Duration;
 
 /**
  * Access Token 黑名单（基于 Redis）。
+ * 用户登出后，即使 Access Token 仍在有效期内也应使其失效。
  * key 使用 token 的 jti，TTL 为该 token 的剩余有效期，到期自动清理。
  */
 @Service
@@ -26,11 +27,13 @@ public class TokenBlacklistService {
     public void blacklist(String token) {
         Duration ttl;
         try {
+            // 计算剩余有效期，决定黑名单 key 的存活时间，避免永久堆积
             ttl = jwtService.parseRemainingTtl(token);
         } catch (Exception e) {
             // 无效或已过期的 token 无需拉黑，也未触碰 Redis
             return;
         }
+        // 已无剩余效用的 token 无需写入
         if (ttl.isZero() || ttl.isNegative()) {
             return;
         }
@@ -42,6 +45,9 @@ public class TokenBlacklistService {
         return Boolean.TRUE.equals(redisTemplate.hasKey(key(token)));
     }
 
+    /**
+     * 由 token 的 jti 构造 Redis key。
+     */
     private String key(String token) {
         return KEY_PREFIX + jwtService.parseJti(token);
     }

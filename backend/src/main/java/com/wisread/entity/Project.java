@@ -8,25 +8,30 @@ import com.baomidou.mybatisplus.annotation.TableName;
 
 import java.time.Instant;
 
+/**
+ * 项目表（projects）的持久化实体。
+ * 项目（Project）是用户组织文档与问答的知识库单元，每个项目归属于一个用户，
+ * 可包含多份文档与多段会话，并支持软删除（通过 deletedAt 标记）。
+ */
 @TableName("projects")
 public class Project {
 
     @TableId(type = IdType.AUTO)
-    private Long id;
+    private Long id; // 主键ID，自增
 
-    private Long userId;
+    private Long userId; // 项目拥有者ID（users.id）
 
-    private String name;
+    private String name; // 项目名称
 
-    private String description;
+    private String description; // 项目描述
 
     @TableField(fill = FieldFill.INSERT)
-    private Instant createdAt;
+    private Instant createdAt; // 创建时间，插入时自动填充
 
     @TableField(fill = FieldFill.INSERT_UPDATE)
-    private Instant updatedAt;
+    private Instant updatedAt; // 更新时间，插入与每次更新时自动填充
 
-    private Instant deletedAt;
+    private Instant deletedAt; // 软删除时间，非空表示该项目的逻辑删除时间
 
     public Long getId() {
         return id;
