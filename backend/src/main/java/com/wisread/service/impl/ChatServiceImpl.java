@@ -1,6 +1,7 @@
 package com.wisread.service.impl;
 
 import com.wisread.service.ChatService;
+import com.wisread.service.ChatLogService;
 import com.wisread.service.CitationParsingService;
 import com.wisread.service.EmbeddingService;
 import com.wisread.service.QueryRewriteService;
@@ -83,6 +84,7 @@ public class ChatServiceImpl implements ChatService {
     private final CitationParsingService citationParsingService;
     private final TokenCounter tokenCounter;
     private final UsageLogService usageLogService;
+    private final ChatLogService chatLogService;
     private final ChatModel chatModel;
     private final String chatModelName;
     private final Executor executor;
@@ -100,6 +102,7 @@ public class ChatServiceImpl implements ChatService {
             CitationParsingService citationParsingService,
             TokenCounter tokenCounter,
             UsageLogService usageLogService,
+            ChatLogService chatLogService,
             @Value("${spring.ai.openai.chat.options.model:qwen3.7-plus}") String chatModelName,
             ChatModel chatModel,
             @Qualifier("documentTaskExecutor") Executor executor
@@ -116,6 +119,7 @@ public class ChatServiceImpl implements ChatService {
         this.citationParsingService = citationParsingService;
         this.tokenCounter = tokenCounter;
         this.usageLogService = usageLogService;
+        this.chatLogService = chatLogService;
         this.chatModel = chatModel;
         this.chatModelName = chatModelName;
         this.executor = executor;
@@ -189,6 +193,8 @@ public class ChatServiceImpl implements ChatService {
             );
             // 重排（当前实现仅截前 3，见 RerankServiceImpl）
             List<ChunkSearchResult> chunks = rerankService.rerank(query, candidates);
+            // 记录本次提问：问题、模型、检索内容与来源文档
+            chatLogService.log(conversation.getUserId(), request.content(), chatModelName, chunks);
             log.info("Chat query='{}' candidates={}", query,
                     chunks.stream().map(ChunkSearchResult::distance).toList());
 

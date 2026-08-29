@@ -181,6 +181,16 @@ export default function ProjectDetailPage() {
 
   async function handleSend(content: string) {
     if (!selectedConversation) return;
+    setMessages((current) => [
+      ...current,
+      {
+        id: -Date.now(),
+        role: "user",
+        content,
+        sources: [],
+        createdAt: new Date().toISOString()
+      }
+    ]);
     setStreaming(true);
     setStreamingContent("");
     try {
