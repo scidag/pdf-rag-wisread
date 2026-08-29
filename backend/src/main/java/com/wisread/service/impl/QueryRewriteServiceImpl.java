@@ -32,6 +32,8 @@ public class QueryRewriteServiceImpl implements QueryRewriteService {
     private final TokenCounter tokenCounter;
     private final UsageLogService usageLogService;
     private final String chatModelName;
+    @org.springframework.beans.factory.annotation.Value("${wisread.rewrite.skip-without-pronoun:true}")
+    private boolean skipWithoutPronoun;
 
     public QueryRewriteServiceImpl(
             ChatModel chatModel,
@@ -56,6 +58,10 @@ public class QueryRewriteServiceImpl implements QueryRewriteService {
         if (history.isEmpty()) {
             return question;
         }
+        // 无指代且不是过短问题时跳过改写，减少无效 LLM 调用
+        if (skipWithoutPronoun && !containsPronoun(question)) {
+            return question;
+        }
         // 将历史消息拼成 "role: content" 文本，作为上下文
         String historyText = history.stream()
                 .map(message -> message.getRole() + ": " + message.getContent())
@@ -76,4 +82,8 @@ public class QueryRewriteServiceImpl implements QueryRewriteService {
         // LLM 返回为空时回退到原问题，保证检索流程不中断
         return rewritten == null || rewritten.isBlank() ? question : rewritten.trim();
     }
-}
+
+    private boolean containsPronoun(String question) {
+        return question.matches(".*(它|他|她|这个|那个|这些|那些|上述|上面|以上).*");
+    }
+}

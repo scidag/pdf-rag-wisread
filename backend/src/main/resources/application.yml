@@ -54,7 +54,11 @@ management:
   endpoints:
     web:
       exposure:
-        include: health,info
+        include: health,info,prometheus
+
+logging:
+  pattern:
+    level: "%5p [traceId=%X{traceId:-}]"
 
 wisread:
   jwt:

@@ -14,7 +14,10 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
+import java.util.Collection;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * 项目（Project）业务服务的实现，负责项目维度的增删改查与软删除管理。
@@ -150,6 +153,21 @@ public class ProjectServiceImpl implements ProjectService {
      */
     @Transactional(readOnly = true)
     public long countConversations(Long userId, Long projectId) {
-        return conversationRepository.findByUserIdAndProjectIdOrderByUpdatedAtDesc(userId, projectId).size();
+        return conversationRepository.countByUserIdAndProjectId(userId, projectId);
     }
-}
+
+    @Transactional(readOnly = true)
+    public Map<Long, long[]> countBatch(Long userId, Collection<Long> projectIds) {
+        Map<Long, long[]> result = new HashMap<>();
+        for (Map<String, Object> row : projectRepository.countStatsByUserId(userId)) {
+            Long projectId = ((Number) row.get("project_id")).longValue();
+            if (!projectIds.contains(projectId)) {
+                continue;
+            }
+            long docCount = ((Number) row.get("doc_count")).longValue();
+            long convCount = ((Number) row.get("conv_count")).longValue();
+            result.put(projectId, new long[]{docCount, convCount});
+        }
+        return result;
+    }
+}

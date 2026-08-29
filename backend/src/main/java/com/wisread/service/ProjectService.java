@@ -4,7 +4,9 @@ import com.wisread.dto.CreateProjectRequest;
 import com.wisread.dto.UpdateProjectRequest;
 import com.wisread.entity.Project;
 
+import java.util.Collection;
 import java.util.List;
+import java.util.Map;
 
 /**
  * 项目（Project）业务服务接口。
@@ -72,4 +74,9 @@ public interface ProjectService {
      * 统计某用户在某项目下的会话数量。
      */
     long countConversations(Long userId, Long projectId);
+
+    /**
+     * 批量统计多个项目的文档数与会话数（列表接口一次 SQL 完成）。
+     */
+    Map<Long, long[]> countBatch(Long userId, Collection<Long> projectIds);
 }

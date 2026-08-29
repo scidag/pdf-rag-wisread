@@ -3,8 +3,11 @@ package com.wisread.repository;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.wisread.entity.Project;
 import org.apache.ibatis.annotations.Mapper;
+import org.apache.ibatis.annotations.Param;
+import org.apache.ibatis.annotations.Select;
 
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 /**
@@ -83,4 +86,17 @@ public interface ProjectRepository extends BaseRepository<Project> {
                 .eq(Project::getUserId, userId)
                 .isNull(Project::getDeletedAt));
     }
+
+    /**
+     * 一次 SQL 返回用户全部项目的文档数与会话数，供列表接口批量组装，消除 N+1。
+     */
+    @Select("""
+            SELECT p.id AS project_id,
+                   (SELECT COUNT(*) FROM documents d WHERE d.project_id = p.id) AS doc_count,
+                   (SELECT COUNT(*) FROM conversations c
+                     WHERE c.project_id = p.id AND c.user_id = #{userId}) AS conv_count
+            FROM projects p
+            WHERE p.user_id = #{userId}
+            """)
+    List<Map<String, Object>> countStatsByUserId(@Param("userId") Long userId);
 }

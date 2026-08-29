@@ -2,6 +2,7 @@ package com.wisread.config;
 
 import com.wisread.security.JwtAuthenticationFilter;
 import com.wisread.security.AuthRateLimitFilter;
+import com.wisread.security.TraceIdFilter;
 import jakarta.servlet.DispatcherType;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -23,13 +24,16 @@ public class SecurityConfig {
 
     private final JwtAuthenticationFilter jwtAuthenticationFilter;
     private final AuthRateLimitFilter authRateLimitFilter;
+    private final TraceIdFilter traceIdFilter;
 
     public SecurityConfig(
             JwtAuthenticationFilter jwtAuthenticationFilter,
-            AuthRateLimitFilter authRateLimitFilter
+            AuthRateLimitFilter authRateLimitFilter,
+            TraceIdFilter traceIdFilter
     ) {
         this.jwtAuthenticationFilter = jwtAuthenticationFilter;
         this.authRateLimitFilter = authRateLimitFilter;
+        this.traceIdFilter = traceIdFilter;
     }
 
     /**
@@ -57,6 +61,7 @@ public class SecurityConfig {
                                 "/api/v1/auth/logout",
                                 "/api/v1/health",
                                 "/actuator/health",
+                                "/actuator/prometheus",
                                 "/error"
                         ).permitAll() // 认证与探活接口允许匿名访问
                         .requestMatchers("/api/v1/admin/**").hasRole("ADMIN") // 管理后台仅限管理员
@@ -76,6 +81,8 @@ public class SecurityConfig {
                             response.getWriter().write("{\"code\":403,\"message\":\"forbidden\"}");
                         })
                 )
+                // traceId 最先注入，保证后续过滤器与业务日志都能关联到同一请求
+                .addFilterBefore(traceIdFilter, UsernamePasswordAuthenticationFilter.class)
                 // 限流过滤器先于 JWT 过滤器执行，命中限流则直接拒绝，避免无谓解析
                 .addFilterBefore(authRateLimitFilter, UsernamePasswordAuthenticationFilter.class)
                 // JWT 认证过滤器在用户名密码过滤器之前解析并写入认证信息

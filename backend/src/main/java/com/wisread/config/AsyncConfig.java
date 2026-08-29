@@ -3,7 +3,9 @@ package com.wisread.config;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
+import org.slf4j.MDC;
 
+import java.util.Map;
 import java.util.concurrent.Executor;
 
 /**
@@ -31,7 +33,45 @@ public class AsyncConfig {
         executor.setQueueCapacity(20);
         // 线程名前缀，方便在日志/堆栈中识别文档处理线程
         executor.setThreadNamePrefix("document-worker-");
+        executor.setTaskDecorator(this::withMdc);
         executor.initialize();
         return executor;
+    }
+
+    /**
+     * 创建专用于 SSE 问答的线程池，与文档处理隔离，避免互相挤占。
+     */
+    @Bean(name = "chatTaskExecutor")
+    Executor chatTaskExecutor() {
+        ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
+        executor.setCorePoolSize(4);
+        executor.setMaxPoolSize(8);
+        executor.setQueueCapacity(20);
+        executor.setThreadNamePrefix("chat-worker-");
+        executor.setTaskDecorator(this::withMdc);
+        executor.initialize();
+        return executor;
+    }
+
+    /**
+     * 把请求线程的 MDC（如 traceId）传递到异步任务，保证链路日志可关联。
+     */
+    private Runnable withMdc(Runnable task) {
+        Map<String, String> context = MDC.getCopyOfContextMap();
+        return () -> {
+            Map<String, String> previous = MDC.getCopyOfContextMap();
+            if (context != null) {
+                MDC.setContextMap(context);
+            }
+            try {
+                task.run();
+            } finally {
+                if (previous == null) {
+                    MDC.clear();
+                } else {
+                    MDC.setContextMap(previous);
+                }
+            }
+        };
     }
 }

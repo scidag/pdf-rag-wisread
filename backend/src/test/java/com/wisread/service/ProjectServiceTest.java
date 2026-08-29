@@ -16,6 +16,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -121,5 +122,19 @@ class ProjectServiceTest {
 
         assertThat(project.getDeletedAt()).isNull();
         verify(projectRepository).updateById(project);
+    }
+
+    @Test
+    void countBatchReturnsOnlyRequestedProjectStats() {
+        when(projectRepository.countStatsByUserId(1L)).thenReturn(List.of(
+                Map.of("project_id", 5L, "doc_count", 2L, "conv_count", 3L),
+                Map.of("project_id", 9L, "doc_count", 1L, "conv_count", 1L)
+        ));
+
+        Map<Long, long[]> counts = projectService.countBatch(1L, List.of(5L));
+
+        assertThat(counts).containsKey(5L);
+        assertThat(counts.get(5L)).containsExactly(2L, 3L);
+        assertThat(counts).doesNotContainKey(9L);
     }
 }

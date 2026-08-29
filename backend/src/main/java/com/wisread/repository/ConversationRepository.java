@@ -44,4 +44,13 @@ public interface ConversationRepository extends BaseRepository<Conversation> {
                 .eq(Conversation::getProjectId, projectId)
                 .orderByDesc(Conversation::getUpdatedAt));
     }
+
+    /**
+     * 统计指定用户在某项目下的会话数量，直接 COUNT，不再查全列表。
+     */
+    default long countByUserIdAndProjectId(Long userId, Long projectId) {
+        return selectCount(new LambdaQueryWrapper<Conversation>()
+                .eq(Conversation::getUserId, userId)
+                .eq(Conversation::getProjectId, projectId));
+    }
 }

@@ -3,7 +3,11 @@ package com.wisread.repository;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.wisread.entity.DocumentJob;
 import org.apache.ibatis.annotations.Mapper;
+import org.apache.ibatis.annotations.Param;
+import org.apache.ibatis.annotations.Update;
 
+import java.time.Instant;
+import java.util.List;
 import java.util.Optional;
 
 /**
@@ -24,5 +28,33 @@ public interface DocumentJobRepository extends BaseRepository<DocumentJob> {
     default Optional<DocumentJob> findByDocumentId(Long documentId) {
         return Optional.ofNullable(selectOne(new LambdaQueryWrapper<DocumentJob>()
                 .eq(DocumentJob::getDocumentId, documentId)));
+    }
+
+    /**
+     * 原子抢占任务：仅当任务仍为 PENDING 时置为 RUNNING，避免并发重复处理。
+     */
+    @Update("""
+            UPDATE document_jobs
+            SET status = 'RUNNING', started_at = now(), updated_at = now()
+            WHERE id = #{id} AND status = 'PENDING'
+            """)
+    int claimPending(@Param("id") Long id);
+
+    /**
+     * 查找长时间未开始的 PENDING 任务（用于定时回收）。
+     */
+    default List<DocumentJob> findPendingOlderThan(Instant before) {
+        return selectList(new LambdaQueryWrapper<DocumentJob>()
+                .eq(DocumentJob::getStatus, "PENDING")
+                .lt(DocumentJob::getCreatedAt, before));
+    }
+
+    /**
+     * 查找执行超时的 RUNNING 任务（用于超时恢复）。
+     */
+    default List<DocumentJob> findRunningOlderThan(Instant before) {
+        return selectList(new LambdaQueryWrapper<DocumentJob>()
+                .eq(DocumentJob::getStatus, "RUNNING")
+                .lt(DocumentJob::getStartedAt, before));
     }
 }

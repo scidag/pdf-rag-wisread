@@ -22,6 +22,9 @@ import com.wisread.repository.ConversationRepository;
 import com.wisread.repository.DocumentRepository;
 import com.wisread.repository.MessageRepository;
 import com.wisread.repository.ProjectRepository;
+import io.micrometer.core.instrument.Counter;
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.Timer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.ai.chat.messages.AssistantMessage;
@@ -36,6 +39,10 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.time.Instant;
+import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.Semaphore;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -88,6 +95,14 @@ public class ChatServiceImpl implements ChatService {
     private final ChatModel chatModel;
     private final String chatModelName;
     private final Executor executor;
+    private final Semaphore chatSemaphore;
+    private final int maxHistoryTokens;
+    private final long slowThresholdMs;
+    private final int topK;
+    private final Timer queueWaitTimer;
+    private final Timer ttftTimer;
+    private final Timer totalTimer;
+    private final Counter rejectionCounter;
 
     public ChatServiceImpl(
             ConversationRepository conversationRepository,
@@ -105,7 +120,12 @@ public class ChatServiceImpl implements ChatService {
             ChatLogService chatLogService,
             @Value("${spring.ai.openai.chat.options.model:qwen3.7-plus}") String chatModelName,
             ChatModel chatModel,
-            @Qualifier("documentTaskExecutor") Executor executor
+            @Value("${wisread.retrieval.top-k:10}") int topK,
+            @Value("${wisread.chat.max-concurrent:8}") int maxConcurrent,
+            @Value("${wisread.chat.max-history-tokens:2000}") int maxHistoryTokens,
+            @Value("${wisread.chat.slow-threshold-ms:10000}") long slowThresholdMs,
+            MeterRegistry meterRegistry,
+            @Qualifier("chatTaskExecutor") Executor executor
     ) {
         this.conversationRepository = conversationRepository;
         this.projectRepository = projectRepository;
@@ -122,7 +142,15 @@ public class ChatServiceImpl implements ChatService {
         this.chatLogService = chatLogService;
         this.chatModel = chatModel;
         this.chatModelName = chatModelName;
+        this.topK = topK;
+        this.chatSemaphore = new Semaphore(maxConcurrent);
+        this.maxHistoryTokens = maxHistoryTokens;
+        this.slowThresholdMs = slowThresholdMs;
         this.executor = executor;
+        this.queueWaitTimer = meterRegistry.timer("wisread.chat.queue.wait");
+        this.ttftTimer = meterRegistry.timer("wisread.chat.ttft");
+        this.totalTimer = meterRegistry.timer("wisread.chat.total");
+        this.rejectionCounter = meterRegistry.counter("wisread.chat.rejections");
     }
 
     /**
@@ -134,8 +162,14 @@ public class ChatServiceImpl implements ChatService {
     public SseEmitter ask(Long userId, Long conversationId, ChatRequest request) {
         Conversation conversation = requireOwnedConversation(userId, conversationId);
         SseEmitter emitter = new SseEmitter(120_000L);
-        // 异步执行，逐 token 向 emitter 推送
-        executor.execute(() -> processAsk(conversation, request, emitter));
+        long submittedAtNanos = System.nanoTime();
+        try {
+            // 异步执行，逐 token 向 emitter 推送
+            executor.execute(() -> processAsk(conversation, request, emitter, submittedAtNanos));
+        } catch (RejectedExecutionException exception) {
+            rejectionCounter.increment();
+            throw new ApiException(HttpStatus.SERVICE_UNAVAILABLE, "chat queue is full, retry later");
+        }
         return emitter;
     }
 
@@ -163,14 +197,19 @@ public class ChatServiceImpl implements ChatService {
      * <p>这是 RAG 编排的核心，依次完成：取历史→落库 user 消息→QueryRewrite 改写→
      * 向量检索 Top10→Rerank→距离阈值拒答→构建 Prompt→流式生成→完成落库。
      */
-    private void processAsk(Conversation conversation, ChatRequest request, SseEmitter emitter) {
+    private void processAsk(Conversation conversation, ChatRequest request, SseEmitter emitter, long submittedAtNanos) {
         try {
             Long projectId = conversation.getProjectId();
+
+            long queuedMs = (System.nanoTime() - submittedAtNanos) / 1_000_000;
+            queueWaitTimer.record(queuedMs, TimeUnit.MILLISECONDS);
+            log.info("Chat queuedMs={} conversationId={}", queuedMs, conversation.getId());
 
             // 取最近 10 条历史（倒序取出后反转，恢复时间正序），用于多轮上下文与改写
             List<com.wisread.entity.Message> history = messageRepository
                     .findTop10ByConversationIdOrderByCreatedAtDesc(conversation.getId())
                     .reversed();
+            history = trimHistory(history, maxHistoryTokens);
 
             // 先把本轮用户提问落库，保证对话持久化
             com.wisread.entity.Message userMessage = new com.wisread.entity.Message();
@@ -189,7 +228,7 @@ public class ChatServiceImpl implements ChatService {
                     conversation.getUserId(),
                     projectId,
                     queryEmbedding,
-                    10
+                    topK
             );
             // 重排（当前实现仅截前 3，见 RerankServiceImpl）
             List<ChunkSearchResult> chunks = rerankService.rerank(query, candidates);
@@ -209,32 +248,102 @@ public class ChatServiceImpl implements ChatService {
             Prompt prompt = buildPrompt(query, chunks, history);
             int promptTokens = countPromptTokens(prompt);
             StringBuilder answer = new StringBuilder();
-            // 流式调用大模型，逐段推送 token
-            chatModel.stream(prompt).subscribe(
-                    response -> {
-                        if (response.getResults().isEmpty()) {
-                            return;
-                        }
-                        String token = response.getResult().getOutput().getText();
-                        if (token != null && !token.isBlank()) {
-                            answer.append(token);
-                            try {
-                                // 以 delta 事件把增量文本推给前端
-                                emitter.send(SseEmitter.event()
-                                        .name("delta")
-                                        .data(Map.of("content", token)));
-                            } catch (Exception exception) {
-                                emitter.completeWithError(exception);
+            try {
+                chatSemaphore.acquire();
+            } catch (InterruptedException exception) {
+                Thread.currentThread().interrupt();
+                completeEmitterWithError(emitter, exception);
+                return;
+            }
+            long flowStartNanos = System.nanoTime();
+            AtomicBoolean released = new AtomicBoolean(false);
+            Runnable releasePermit = () -> {
+                if (released.compareAndSet(false, true)) {
+                    chatSemaphore.release();
+                }
+            };
+            try {
+                // 流式调用大模型，逐段推送 token
+                chatModel.stream(prompt).subscribe(
+                        response -> {
+                            if (response.getResults().isEmpty()) {
+                                return;
                             }
+                            String token = response.getResult().getOutput().getText();
+                            if (token != null && !token.isBlank()) {
+                                if (answer.isEmpty()) {
+                                    ttftTimer.record(System.nanoTime() - flowStartNanos, TimeUnit.NANOSECONDS);
+                                }
+                                answer.append(token);
+                                try {
+                                    // 以 delta 事件把增量文本推给前端
+                                    emitter.send(SseEmitter.event()
+                                            .name("delta")
+                                            .data(Map.of("content", token)));
+                                } catch (Exception exception) {
+                                    releasePermit.run();
+                                    completeEmitterWithError(emitter, exception);
+                                }
+                            }
+                        },
+                        error -> {
+                            releasePermit.run();
+                            completeEmitterWithError(emitter, error);
+                        },
+                        // 流结束后落库并回传完整答案与引用来源
+                        () -> {
+                            releasePermit.run();
+                            long totalMs = (System.nanoTime() - flowStartNanos) / 1_000_000;
+                            totalTimer.record(totalMs, TimeUnit.MILLISECONDS);
+                            if (totalMs > slowThresholdMs) {
+                                log.warn("Chat slow totalMs={} conversationId={}", totalMs, conversation.getId());
+                            }
+                            completeAnswer(conversation, chunks, answer.toString(), emitter, promptTokens);
                         }
-                    },
-                    emitter::completeWithError,
-                    // 流结束后落库并回传完整答案与引用来源
-                    () -> completeAnswer(conversation, chunks, answer.toString(), emitter, promptTokens)
-            );
+                );
+            } catch (RuntimeException exception) {
+                releasePermit.run();
+                throw exception;
+            }
         } catch (Exception exception) {
+            completeEmitterWithError(emitter, exception);
+        }
+    }
+
+    /**
+     * SSE 响应已提交后不能再写 JSON 错误体，改为推送 error 事件再结束连接。
+     */
+    private void completeEmitterWithError(SseEmitter emitter, Throwable exception) {
+        log.warn("Chat SSE error", exception);
+        try {
+            emitter.send(SseEmitter.event()
+                    .name("error")
+                    .data(Map.of("message", "chat failed")));
+            emitter.complete();
+        } catch (Exception sendException) {
             emitter.completeWithError(exception);
         }
+    }
+
+    /**
+     * 按 token 预算保留最近的历史消息，控制 prompt 长度与首字延迟。
+     */
+    private List<com.wisread.entity.Message> trimHistory(
+            List<com.wisread.entity.Message> history,
+            int budgetTokens
+    ) {
+        List<com.wisread.entity.Message> kept = new ArrayList<>();
+        int total = 0;
+        for (int i = history.size() - 1; i >= 0; i--) {
+            com.wisread.entity.Message message = history.get(i);
+            int tokens = tokenCounter.count(message.getContent());
+            if (total + tokens > budgetTokens) {
+                break;
+            }
+            total += tokens;
+            kept.add(0, message);
+        }
+        return kept;
     }
 
     /**
@@ -281,7 +390,7 @@ public class ChatServiceImpl implements ChatService {
                     .data(Map.of("content", answer, "sources", sources)));
             emitter.complete();
         } catch (Exception exception) {
-            emitter.completeWithError(exception);
+            completeEmitterWithError(emitter, exception);
         }
     }
 
@@ -306,7 +415,7 @@ public class ChatServiceImpl implements ChatService {
                     .data(Map.of("content", answer, "sources", List.of())));
             emitter.complete();
         } catch (Exception exception) {
-            emitter.completeWithError(exception);
+            completeEmitterWithError(emitter, exception);
         }
     }
 

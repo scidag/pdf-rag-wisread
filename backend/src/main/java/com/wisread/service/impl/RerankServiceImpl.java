@@ -3,6 +3,7 @@ package com.wisread.service.impl;
 import com.wisread.service.RerankService;
 
 import com.wisread.model.ChunkSearchResult;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
@@ -17,6 +18,9 @@ import java.util.List;
 @Service
 public class RerankServiceImpl implements RerankService {
 
+    @Value("${wisread.retrieval.rerank-k:3}")
+    private int rerankK;
+
     /**
      * 重排候选块。
      *
@@ -24,7 +28,7 @@ public class RerankServiceImpl implements RerankService {
      * 未做真实重排。注意：这意味着真正参与回答的上下文最多 3 块（[1]..[3]）。
      */
     public List<ChunkSearchResult> rerank(String query, List<ChunkSearchResult> candidates) {
-        // 占位：仅截前 3，待接入真实重排模型
-        return candidates.stream().limit(3).toList();
+        // 占位：仅截前 rerankK 个，待接入真实重排模型
+        return candidates.stream().limit(rerankK).toList();
     }
-}
+}

@@ -20,6 +20,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
+import java.util.Map;
 
 /**
  * 项目（Project）控制器。
@@ -60,7 +61,13 @@ public class ProjectController {
     public ResponseEntity<List<ProjectResponse>> list(Authentication authentication) {
         Long userId = (Long) authentication.getPrincipal();
         List<Project> projects = projectService.list(userId);
-        return ResponseEntity.ok(projects.stream().map(p -> toResponse(userId, p)).toList());
+        Map<Long, long[]> counts = projectService.countBatch(
+                userId,
+                projects.stream().map(Project::getId).toList()
+        );
+        return ResponseEntity.ok(projects.stream()
+                .map(p -> toResponse(userId, p, counts.get(p.getId())))
+                .toList());
     }
 
     /** GET /api/v1/projects/deleted：列出当前用户的回收站项目。
@@ -71,7 +78,13 @@ public class ProjectController {
     public ResponseEntity<List<ProjectResponse>> listDeleted(Authentication authentication) {
         Long userId = (Long) authentication.getPrincipal();
         List<Project> projects = projectService.listDeleted(userId);
-        return ResponseEntity.ok(projects.stream().map(p -> toResponse(userId, p)).toList());
+        Map<Long, long[]> counts = projectService.countBatch(
+                userId,
+                projects.stream().map(Project::getId).toList()
+        );
+        return ResponseEntity.ok(projects.stream()
+                .map(p -> toResponse(userId, p, counts.get(p.getId())))
+                .toList());
     }
 
     /** GET /api/v1/projects/{projectId}：获取单个项目详情。
@@ -149,6 +162,12 @@ public class ProjectController {
     private ProjectResponse toResponse(Long userId, Project project) {
         long docCount = projectService.countDocuments(project.getId());
         long convCount = projectService.countConversations(userId, project.getId());
+        return toResponse(userId, project, new long[]{docCount, convCount});
+    }
+
+    private ProjectResponse toResponse(Long userId, Project project, long[] counts) {
+        long docCount = counts != null ? counts[0] : 0;
+        long convCount = counts != null ? counts[1] : 0;
         return new ProjectResponse(
                 project.getId(),
                 project.getName(),

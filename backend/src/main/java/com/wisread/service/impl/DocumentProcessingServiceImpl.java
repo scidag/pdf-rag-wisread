@@ -18,10 +18,12 @@ import com.wisread.repository.DocumentRepository;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.scheduling.annotation.Async;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -45,6 +47,8 @@ public class DocumentProcessingServiceImpl implements DocumentProcessingService 
 
     // 单文档 token 总量上限（50 万），超出视为不合规文档，直接失败
     private static final int MAX_TOKEN_COUNT = 500_000;
+    // 处理总尝试次数上限（首次 + 1 次重试）
+    private static final int MAX_ATTEMPTS = 2;
 
     private final DocumentRepository documentRepository;
     private final DocumentJobRepository documentJobRepository;
@@ -55,6 +59,9 @@ public class DocumentProcessingServiceImpl implements DocumentProcessingService 
     private final VectorIndexingService vectorIndexingService;
     private final MinioStorageService minioStorageService;
     private final String embeddingModelVersion;
+
+    @org.springframework.beans.factory.annotation.Value("${wisread.document.run-timeout-ms:600000}")
+    private long runTimeoutMs;
 
     public DocumentProcessingServiceImpl(
             DocumentRepository documentRepository,
@@ -101,14 +108,25 @@ public class DocumentProcessingServiceImpl implements DocumentProcessingService 
         DocumentJob job = documentJobRepository.findByDocumentId(documentId)
                 .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "document job not found"));
 
-        // 进入处理中状态并记录开始时间（状态机：UPLOADED → PROCESSING）
-        document.setStatus("PROCESSING");
+        // 幂等：已完成任务直接跳过，避免重复向量化
+        if ("READY".equals(document.getStatus()) && "SUCCEEDED".equals(job.getStatus())) {
+            return;
+        }
+        // 原子抢占 PENDING -> RUNNING，避免并发重复处理
+        if (documentJobRepository.claimPending(job.getId()) == 0) {
+            return;
+        }
         job.setStatus("RUNNING");
         job.setStartedAt(Instant.now());
+        job.setErrorMessage(null);
+        document.setStatus("PROCESSING");
+        document.setErrorMessage(null);
         documentRepository.updateById(document);
         documentJobRepository.updateById(job);
 
         try {
+            // 幂等：重新处理前清理旧向量，避免部分失败后残留脏数据
+            vectorIndexingService.deleteByDocumentId(documentId);
             // 从对象存储取回 PDF 原始字节
             byte[] pdfBytes = minioStorageService.getObject(document.getFileKey());
             // 逐页抽取文本
@@ -189,6 +207,40 @@ public class DocumentProcessingServiceImpl implements DocumentProcessingService 
             job.setErrorMessage(exception.getMessage());
             documentRepository.updateById(document);
             documentJobRepository.updateById(job);
+        }
+    }
+
+    /**
+     * 定时恢复卡死任务：回收长时间未开始的 PENDING，以及执行超时的 RUNNING。
+     * ponytail: 顺序处理少量卡死任务，任务量上来后改独立调度线程/队列。
+     */
+    @Scheduled(fixedDelayString = "${wisread.document.recovery-interval-ms:30000}")
+    public void recoverStuckJobs() {
+        Instant now = Instant.now();
+        for (DocumentJob job : documentJobRepository.findPendingOlderThan(now.minus(Duration.ofSeconds(30)))) {
+            if (job.getAttempt() != null && job.getAttempt() >= MAX_ATTEMPTS) {
+                job.setStatus("FAILED");
+                job.setFinishedAt(Instant.now());
+                job.setErrorMessage("max attempts reached");
+                documentJobRepository.updateById(job);
+                documentRepository.findById(job.getDocumentId()).ifPresent(document -> {
+                    document.setStatus("FAILED");
+                    document.setErrorMessage("max attempts reached");
+                    documentRepository.updateById(document);
+                });
+                continue;
+            }
+            documentRepository.findById(job.getDocumentId())
+                    .ifPresent(document -> processInternal(document.getId(), document.getUserId()));
+        }
+        for (DocumentJob job : documentJobRepository.findRunningOlderThan(now.minus(Duration.ofMillis(runTimeoutMs)))) {
+            job.setStatus("PENDING");
+            job.setAttempt((job.getAttempt() == null ? 0 : job.getAttempt()) + 1);
+            job.setStartedAt(null);
+            job.setErrorMessage("processing timeout, scheduled retry");
+            documentJobRepository.updateById(job);
+            documentRepository.findById(job.getDocumentId())
+                    .ifPresent(document -> processInternal(document.getId(), document.getUserId()));
         }
     }
 }

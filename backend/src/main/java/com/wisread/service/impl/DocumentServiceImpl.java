@@ -15,10 +15,13 @@ import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.RejectedExecutionException;
 
 /**
  * 文档服务实现（DocumentServiceImpl）。
@@ -33,6 +36,8 @@ import java.util.UUID;
  */
 @Service
 public class DocumentServiceImpl implements DocumentService {
+
+    private static final Logger log = LoggerFactory.getLogger(DocumentServiceImpl.class);
 
     // 单文件大小上限：100MB，超出返回 413
     private static final long MAX_FILE_SIZE = 100L * 1024 * 1024;
@@ -119,8 +124,14 @@ public class DocumentServiceImpl implements DocumentService {
         job.setStatus("PENDING");
         documentJobRepository.insert(job);
 
-        // 同步触发异步处理（@Async 会在线程池后台执行）
-        documentProcessingService.processDocument(document.getId(), userId);
+        // 同步触发异步处理（@Async 会在线程池后台执行）；
+        // 提交失败时保持 PENDING，由定时恢复任务兜底，避免任务静默丢失
+        try {
+            documentProcessingService.processDocument(document.getId(), userId);
+        } catch (RejectedExecutionException exception) {
+            log.warn("document {} processing submission rejected, job stays PENDING for scheduled retry",
+                    document.getId(), exception);
+        }
         return toResponse(document);
     }
 
