@@ -32,7 +32,9 @@ public class AuthController {
     // refresh token 在 Cookie 中使用的名称
     public static final String REFRESH_COOKIE = "wisread_refresh";
     // refresh token Cookie 对应的路径
-    private static final String REFRESH_COOKIE_PATH = "/api/v1/auth";
+    private static final String REFRESH_COOKIE_PATH = "/api/v1/auth/refresh";
+    // 旧版本曾以 /api/v1/auth 下发同名 Cookie，登录/登出时顺带清除，避免残留 token 干扰读取
+    private static final String LEGACY_REFRESH_COOKIE_PATH = "/api/v1/auth";
 
     private final AuthService authService;
     private final TokenBlacklistService tokenBlacklistService;
@@ -99,12 +101,8 @@ public class AuthController {
             tokenBlacklistService.blacklist(accessToken);
         }
         authService.logout(readRefreshCookie(httpRequest));
-        Cookie cookie = new Cookie(REFRESH_COOKIE, "");
-        cookie.setHttpOnly(true);
-        cookie.setPath(REFRESH_COOKIE_PATH);
-        cookie.setAttribute("SameSite", "Strict");
-        cookie.setMaxAge(0);
-        response.addCookie(cookie);
+        deleteCookie(response, REFRESH_COOKIE_PATH);
+        deleteCookie(response, LEGACY_REFRESH_COOKIE_PATH);
         return ResponseEntity.noContent().build();
     }
 
@@ -123,8 +121,19 @@ public class AuthController {
         cookie.setHttpOnly(true);
         cookie.setSecure(request.isSecure());
         cookie.setPath(REFRESH_COOKIE_PATH);
-        cookie.setAttribute("SameSite", "Strict");
+        cookie.setAttribute("SameSite", "Lax");
         cookie.setMaxAge(7 * 24 * 3600);
+        response.addCookie(cookie);
+        deleteCookie(response, LEGACY_REFRESH_COOKIE_PATH);
+    }
+
+    // 以 Max-Age=0 覆盖同名 Cookie，清除旧路径下可能残留的 refresh token
+    private void deleteCookie(HttpServletResponse response, String path) {
+        Cookie cookie = new Cookie(REFRESH_COOKIE, "");
+        cookie.setHttpOnly(true);
+        cookie.setPath(path);
+        cookie.setAttribute("SameSite", "Lax");
+        cookie.setMaxAge(0);
         response.addCookie(cookie);
     }
 
@@ -134,10 +143,19 @@ public class AuthController {
         if (cookies == null) {
             return null;
         }
+        Cookie fallback = null;
         for (Cookie cookie : cookies) {
-            if (REFRESH_COOKIE.equals(cookie.getName())) {
+            if (!REFRESH_COOKIE.equals(cookie.getName())) {
+                continue;
+            }
+            // 历史遗留同名 Cookie 可能有多个：优先取当前路径，其余留作兜底
+            if (REFRESH_COOKIE_PATH.equals(cookie.getPath())) {
                 return cookie.getValue();
             }
+            fallback = cookie;
+        }
+        if (fallback != null) {
+            return fallback.getValue();
         }
         throw new ApiException(HttpStatus.UNAUTHORIZED, "missing refresh token");
     }

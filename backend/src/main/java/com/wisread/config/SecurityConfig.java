@@ -77,7 +77,7 @@ public class SecurityConfig {
                         })
                 )
                 // 限流过滤器先于 JWT 过滤器执行，命中限流则直接拒绝，避免无谓解析
-                .addFilterBefore(authRateLimitFilter, JwtAuthenticationFilter.class)
+                .addFilterBefore(authRateLimitFilter, UsernamePasswordAuthenticationFilter.class)
                 // JWT 认证过滤器在用户名密码过滤器之前解析并写入认证信息
                 .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
         return http.build();

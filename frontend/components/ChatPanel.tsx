@@ -116,9 +116,9 @@ export default function ChatPanel({
           e.preventDefault();
           handleSend();
         }}
-        className="flex items-end gap-[10px] border-t border-border bg-[rgba(6,12,26,0.82)] px-[clamp(16px,3vw,36px)] py-3 backdrop-blur-xl"
+        className="flex items-end gap-[10px] border-t border-border bg-[rgba(6,12,26,0.82)] px-[clamp(16px,3vw,36px)] pb-[14px] pt-[10px] backdrop-blur-xl"
       >
-        <div className="flex flex-1 items-end gap-2 rounded-xl border border-[rgba(255,255,255,0.09)] bg-[rgba(255,255,255,0.035)] px-[14px] py-2 transition focus-within:border-[rgba(80,140,255,0.5)] focus-within:shadow-[0_0_0_3px_rgba(60,120,255,0.1)]">
+        <div className="flex flex-1 items-end gap-2 rounded-xl border border-[rgba(255,255,255,0.09)] bg-[rgba(255,255,255,0.035)] px-[14px] py-[6px] transition focus-within:border-[rgba(80,140,255,0.5)] focus-within:shadow-[0_0_0_3px_rgba(60,120,255,0.1)]">
           <textarea
             value={content}
             onChange={(event) => setContent(event.target.value)}
@@ -131,13 +131,13 @@ export default function ChatPanel({
             rows={1}
             placeholder={hasConversation ? "输入你的问题…" : "请先选择或新建会话"}
             disabled={!hasConversation}
-            className="max-h-[120px] min-h-[40px] flex-1 resize-none border-0 bg-transparent text-[0.82rem] leading-[1.6] text-[rgba(225,238,255,0.9)] outline-none placeholder:text-[rgba(150,185,235,0.4)] disabled:cursor-not-allowed"
+            className="max-h-[120px] min-h-[28px] flex-1 resize-none border-0 bg-transparent text-[0.88rem] leading-[1.45] text-[rgba(225,238,255,0.9)] outline-none placeholder:text-[rgba(150,185,235,0.4)] disabled:cursor-not-allowed"
           />
           <button
             type="submit"
             aria-label="发送"
             disabled={!content.trim() || streaming || !hasConversation}
-            className="flex h-[38px] w-[38px] shrink-0 items-center justify-center rounded-[10px] border border-[rgba(80,150,255,0.35)] bg-gradient-to-br from-[#2860d6] to-[#3a7fff] text-[rgba(235,245,255,0.96)] transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-45"
+            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[9px] border border-[rgba(80,150,255,0.35)] bg-gradient-to-br from-[#2860d6] to-[#3a7fff] text-[rgba(235,245,255,0.96)] transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-45"
           >
             {streaming ? (
               <Loader2 className="h-4 w-4 animate-spin" />

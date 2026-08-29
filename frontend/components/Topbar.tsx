@@ -82,7 +82,7 @@ export default function Topbar({
         <button
           type="button"
           onClick={onPrimary ?? onNewProject}
-          className="hidden h-[38px] items-center gap-2 rounded-[10px] border border-[rgba(80,150,255,0.35)] bg-gradient-to-br from-[#2860d6] to-[#3a7fff] px-4 text-[0.82rem] font-bold text-[rgba(230,242,255,0.96)] shadow-[0_4px_20px_rgba(40,100,255,0.28)] transition hover:brightness-110 md:inline-flex"
+          className="inline-flex h-[38px] items-center gap-2 rounded-[10px] border border-[rgba(80,150,255,0.35)] bg-gradient-to-br from-[#2860d6] to-[#3a7fff] px-4 text-[0.82rem] font-bold text-[rgba(230,242,255,0.96)] shadow-[0_4px_20px_rgba(40,100,255,0.28)] transition hover:brightness-110"
         >
           {primaryIcon === "plus" ? <Plus className="h-4 w-4" /> : null}
           <span>{primaryLabel}</span>

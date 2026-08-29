@@ -12,7 +12,6 @@ import {
   Loader2,
   MessageCircle,
   MessagesSquare,
-  Plus,
   Sparkles,
   Upload
 } from "lucide-react";
@@ -218,14 +217,6 @@ export default function HomePage() {
               {dateLabel}
             </p>
           </div>
-          <button
-            type="button"
-            onClick={() => setDialogOpen(true)}
-            className="inline-flex h-[38px] items-center gap-2 rounded-[10px] border border-[rgba(80,150,255,0.35)] bg-gradient-to-br from-[#2860d6] to-[#3a7fff] px-4 text-[0.82rem] font-bold text-[rgba(230,242,255,0.96)] shadow-[0_4px_20px_rgba(40,100,255,0.28)] transition hover:brightness-110"
-          >
-            <Plus className="h-4 w-4" />
-            <span>新建项目</span>
-          </button>
         </section>
 
         <section className="mb-5 grid grid-cols-[repeat(auto-fit,minmax(200px,1fr))] gap-3">
@@ -264,14 +255,6 @@ export default function HomePage() {
             <p className="mt-2 max-w-[380px] text-[0.78rem] leading-[1.7] text-[rgba(160,190,230,0.45)]">
               新建一个项目，上传 PDF 文档，开始向文档提问。
             </p>
-            <button
-              type="button"
-              onClick={() => setDialogOpen(true)}
-              className="mt-6 inline-flex h-[38px] items-center gap-2 rounded-[10px] border border-[rgba(80,150,255,0.35)] bg-gradient-to-br from-[#2860d6] to-[#3a7fff] px-4 text-[0.82rem] font-bold text-[rgba(230,242,255,0.96)] shadow-[0_4px_20px_rgba(40,100,255,0.28)] transition hover:brightness-110"
-            >
-              <Plus className="h-4 w-4" />
-              <span>新建项目</span>
-            </button>
           </div>
         ) : (
           <section className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1.55fr)_minmax(0,1fr)]">
@@ -326,32 +309,14 @@ export default function HomePage() {
                 </div>
               )}
 
-              <div className="mt-4 grid grid-cols-3 gap-3">
-                <button
-                  type="button"
-                  onClick={() => setDialogOpen(true)}
-                  className="inline-flex min-w-0 items-center gap-[10px] rounded-[11px] border border-[rgba(255,255,255,0.07)] bg-[rgba(255,255,255,0.028)] px-[14px] py-[13px] text-[0.78rem] font-bold text-[rgba(205,225,250,0.82)] transition hover:border-[rgba(80,140,255,0.34)] hover:bg-[rgba(80,140,255,0.08)]"
-                >
-                  <Plus className="h-4 w-4 shrink-0 text-[rgba(110,170,255,0.8)]" />
-                  <span className="truncate">新建项目</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => router.push("/projects")}
-                  className="inline-flex min-w-0 items-center gap-[10px] rounded-[11px] border border-[rgba(255,255,255,0.07)] bg-[rgba(255,255,255,0.028)] px-[14px] py-[13px] text-[0.78rem] font-bold text-[rgba(205,225,250,0.82)] transition hover:border-[rgba(80,140,255,0.34)] hover:bg-[rgba(80,140,255,0.08)]"
-                >
-                  <LayoutGrid className="h-4 w-4 shrink-0 text-[rgba(110,170,255,0.8)]" />
-                  <span className="truncate">打开工作区</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={handleUploadShortcut}
-                  className="inline-flex min-w-0 items-center gap-[10px] rounded-[11px] border border-[rgba(255,255,255,0.07)] bg-[rgba(255,255,255,0.028)] px-[14px] py-[13px] text-[0.78rem] font-bold text-[rgba(205,225,250,0.82)] transition hover:border-[rgba(80,140,255,0.34)] hover:bg-[rgba(80,140,255,0.08)]"
-                >
-                  <Upload className="h-4 w-4 shrink-0 text-[rgba(110,170,255,0.8)]" />
-                  <span className="truncate">上传 PDF</span>
-                </button>
-              </div>
+              <button
+                type="button"
+                onClick={handleUploadShortcut}
+                className="mt-4 flex w-full items-center justify-center gap-2 rounded-[11px] border border-dashed border-[rgba(80,140,255,0.34)] bg-[rgba(80,140,255,0.05)] px-[14px] py-[11px] text-[0.78rem] font-bold text-[rgba(130,185,255,0.9)] transition hover:border-[rgba(80,140,255,0.55)] hover:bg-[rgba(80,140,255,0.1)]"
+              >
+                <Upload className="h-4 w-4 shrink-0" />
+                <span>上传 PDF 开始提问</span>
+              </button>
             </div>
 
             {/* 最近问答 */}

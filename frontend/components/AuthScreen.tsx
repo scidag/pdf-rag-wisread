@@ -55,7 +55,7 @@ export default function AuthScreen({ initialTab = "signin" }: AuthScreenProps) {
       } else {
         await register(name, email, password);
       }
-      router.push("/workspace");
+      router.push("/home");
     } catch (err) {
       setError(err instanceof Error ? err.message : "请求失败");
     } finally {

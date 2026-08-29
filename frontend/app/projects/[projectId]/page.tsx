@@ -6,7 +6,6 @@ import {
   ArrowLeft,
   Loader2,
   PanelLeft,
-  Plus,
   X
 } from "lucide-react";
 import { logout, restoreSession } from "@/lib/auth-store";
@@ -264,14 +263,6 @@ export default function ProjectDetailPage() {
             >
               <ArrowLeft className="h-4 w-4" />
               <span className="hidden md:inline">返回项目列表</span>
-            </button>
-            <button
-              type="button"
-              onClick={handleCreateConversation}
-              className="inline-flex h-9 items-center gap-2 rounded-[9px] border border-[rgba(255,255,255,0.08)] bg-[rgba(255,255,255,0.03)] px-3 text-[0.78rem] font-semibold text-[rgba(200,220,250,0.72)] transition hover:bg-[rgba(255,255,255,0.065)]"
-            >
-              <Plus className="h-4 w-4" />
-              <span className="hidden md:inline">新对话</span>
             </button>
           </div>
         </header>

@@ -2,14 +2,12 @@
 
 import { useRef } from "react";
 import {
-  ArrowLeft,
   FileText,
   MessageSquare,
   Plus,
   Upload,
   X
 } from "lucide-react";
-import { useRouter } from "next/navigation";
 import type { Conversation, Document, Project, User } from "@/lib/types";
 import LogoMark from "./LogoMark";
 import StatusBadge from "./StatusBadge";
@@ -43,7 +41,6 @@ export default function ProjectSidebar({
   mobileOpen,
   onCloseMobile
 }: ProjectSidebarProps) {
-  const router = useRouter();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   return (
@@ -87,15 +84,10 @@ export default function ProjectSidebar({
             <div className="mb-[9px] flex items-center justify-between gap-2">
               <span className="text-[0.7rem] font-bold tracking-[0.06em] text-[rgba(180,205,240,0.6)]">
                 文档
+                <span className="ml-1.5 font-mono text-[0.62rem] font-semibold tracking-[0.04em] text-[rgba(150,185,235,0.42)]">
+                  {documents.length}
+                </span>
               </span>
-              <button
-                type="button"
-                onClick={() => fileInputRef.current?.click()}
-                className="inline-flex items-center gap-1 rounded-[6px] px-[7px] py-1 text-[0.68rem] font-bold text-[rgba(110,165,255,0.75)] transition hover:bg-[rgba(80,140,255,0.1)] hover:text-[rgba(110,165,255,1)]"
-              >
-                <Plus className="h-3 w-3" />
-                添加
-              </button>
             </div>
             <input
               ref={fileInputRef}
@@ -152,6 +144,9 @@ export default function ProjectSidebar({
             <div className="mb-[9px] flex items-center justify-between gap-2">
               <span className="text-[0.7rem] font-bold tracking-[0.06em] text-[rgba(180,205,240,0.6)]">
                 会话
+                <span className="ml-1.5 font-mono text-[0.62rem] font-semibold tracking-[0.04em] text-[rgba(150,185,235,0.42)]">
+                  {conversations.length}
+                </span>
               </span>
               <button
                 type="button"
@@ -199,15 +194,6 @@ export default function ProjectSidebar({
           >
             <Upload className="h-4 w-4" />
             <span>上传文档</span>
-          </button>
-          <button
-            type="button"
-            onClick={() => router.push("/projects")}
-            aria-label="返回项目列表"
-            title="返回项目列表"
-            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[9px] border border-[rgba(255,255,255,0.07)] bg-[rgba(255,255,255,0.03)] text-[rgba(180,205,240,0.62)] transition hover:bg-[rgba(255,255,255,0.07)]"
-          >
-            <ArrowLeft className="h-4 w-4" />
           </button>
           <div
             className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-[rgba(120,180,255,0.32)] bg-gradient-to-br from-[#1d3f7a] to-[#102a56] text-[0.78rem] font-bold text-[rgba(220,235,255,0.95)]"
