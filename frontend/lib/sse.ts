@@ -72,10 +72,12 @@ function handleEvent(rawEvent: string, callbacks: StreamCallbacks) {
     return;
   }
 
-  const payload = JSON.parse(data) as ChatDonePayload;
+  const payload = JSON.parse(data) as ChatDonePayload & { message?: string };
   if (event === "delta" && payload.content) {
     callbacks.onDelta(payload.content);
   } else if (event === "done") {
     callbacks.onDone(payload);
+  } else if (event === "error") {
+    throw new Error(payload.message ?? "问答请求失败");
   }
 }

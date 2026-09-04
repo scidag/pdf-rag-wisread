@@ -205,9 +205,12 @@ export default function ProjectDetailPage() {
           await loadConversations();
         }
       });
-    } catch {
+    } catch (err) {
       setStreaming(false);
       setStreamingContent("");
+      const message =
+        err instanceof Error ? err.message : "问答请求失败，请稍后重试";
+      window.alert(message);
     }
   }
 

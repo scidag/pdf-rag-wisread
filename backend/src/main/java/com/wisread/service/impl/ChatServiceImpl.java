@@ -318,11 +318,33 @@ public class ChatServiceImpl implements ChatService {
         try {
             emitter.send(SseEmitter.event()
                     .name("error")
-                    .data(Map.of("message", "chat failed")));
+                    .data(Map.of("message", translateErrorMessage(exception))));
             emitter.complete();
         } catch (Exception sendException) {
             emitter.completeWithError(exception);
         }
+    }
+
+    /**
+     * 把底层模型异常转成可展示给前端的中文提示。额度耗尽会以 402/429 加
+     * quota/balance/arrears 等字样出现在异常消息里，这类情况给用户明确提示；
+     * 其余错误统一模糊处理，避免把内部异常细节暴露给前端。
+     */
+    static String translateErrorMessage(Throwable exception) {
+        for (Throwable current = exception; current != null; current = current.getCause()) {
+            String message = current.getMessage();
+            if (message == null) {
+                continue;
+            }
+            String lower = message.toLowerCase();
+            if ((lower.contains("402") || lower.contains("429"))
+                    && (lower.contains("quota") || lower.contains("balance")
+                    || lower.contains("credit") || lower.contains("arrear")
+                    || lower.contains("额度") || lower.contains("余额"))) {
+                return "AI 模型额度已用完，请充值后再试";
+            }
+        }
+        return "问答请求失败，请稍后重试";
     }
 
     /**
