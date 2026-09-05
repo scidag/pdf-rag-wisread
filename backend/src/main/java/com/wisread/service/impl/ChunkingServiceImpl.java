@@ -21,11 +21,13 @@ import java.util.List;
 public class ChunkingServiceImpl implements ChunkingService {
 
     // 单块 token 下限：低于此值不急于切分，尽量凑满一个语义完整的块
-    private static final int MIN_CHUNK_TOKENS = 800;
+    // 配合 CJK 感知 TokenCounter（中文 1 字≈1 token），300 token ≈ 300 汉字，RAG 检索粒度适中
+    private static final int MIN_CHUNK_TOKENS = 300;
     // 单块 token 上限：超过即考虑切分，避免超出 Embedding 模型上下文并稀释检索精度
-    private static final int MAX_CHUNK_TOKENS = 1200;
+    private static final int MAX_CHUNK_TOKENS = 512;
     // 相邻块尾部重叠的 token 数：把上一块末尾内容带入新块，保留跨块上下文
-    private static final int OVERLAP_TOKENS = 150;
+    // 块变小后 overlap 相应调小，避免重叠占比过高（原 150 在 300~512 块里占 30~50%）
+    private static final int OVERLAP_TOKENS = 80;
 
     private final TokenCounter tokenCounter;
 
@@ -34,7 +36,7 @@ public class ChunkingServiceImpl implements ChunkingService {
     }
 
     /**
-     * 将一页文本切分为多个 800~1200 token 的块，并保留 150 token 尾部重叠。
+     * 将一页文本切分为多个 300~512 token 的块，并保留 80 token 尾部重叠。
      * 为何重叠：句子边界无法保证落在块的边界，重叠可让被切断处的上下文在新块开头重现，
      * 避免关键信息因跨块割裂而检索不到；也能提升向量对片段语义的表征质量。
      */
@@ -119,4 +121,5 @@ public class ChunkingServiceImpl implements ChunkingService {
         }
         builder.append(value);
     }
-}
+}
+
