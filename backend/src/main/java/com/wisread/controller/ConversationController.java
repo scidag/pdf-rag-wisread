@@ -35,10 +35,7 @@ public class ConversationController {
     private final ConversationService conversationService;
     private final ChatService chatService;
 
-    public ConversationController(
-            ConversationService conversationService,
-            ChatService chatService
-    ) {
+    public ConversationController(ConversationService conversationService, ChatService chatService) {
         this.conversationService = conversationService;
         this.chatService = chatService;
     }

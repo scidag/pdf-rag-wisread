@@ -54,6 +54,15 @@ public interface DocumentService {
     DocumentResponse get(Long userId, Long documentId);
 
     /**
+     * 读取文档原始 PDF 内容（用于预览）。
+     *
+     * @param userId      当前用户 ID
+     * @param documentId  文档 ID
+     * @return PDF 文件字节
+     */
+    byte[] getContent(Long userId, Long documentId);
+
+    /**
      * 删除文档：同时删除 MinIO 对象与文档元数据。
      *
      * @param userId      当前用户 ID

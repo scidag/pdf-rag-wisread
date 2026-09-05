@@ -167,6 +167,11 @@ public class DocumentServiceImpl implements DocumentService {
         return toResponse(findOwnedDocument(userId, documentId));
     }
 
+    @Transactional(readOnly = true)
+    public byte[] getContent(Long userId, Long documentId) {
+        return minioStorageService.getObject(findOwnedDocument(userId, documentId).getFileKey());
+    }
+
     /**
      * 删除文档：同时删除 MinIO 中的对象与数据库元数据，避免产生孤儿文件。
      */

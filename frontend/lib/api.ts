@@ -9,36 +9,41 @@ import type {
   User
 } from "./types";
 
+interface ApiFetchOptions extends RequestInit {
+  asBlob?: boolean;
+}
+
 export async function apiFetch<T>(
   path: string,
-  options: RequestInit = {}
+  options: ApiFetchOptions = {}
 ): Promise<T> {
-  const headers = new Headers(options.headers);
+  const { asBlob = false, ...request } = options;
+  const headers = new Headers(request.headers);
   const token = getAccessToken();
   if (token) {
     headers.set("Authorization", `Bearer ${token}`);
   }
-  if (!(options.body instanceof FormData)) {
+  if (!(request.body instanceof FormData)) {
     headers.set("Content-Type", "application/json");
   }
 
   let response = await fetch(`${API_BASE}${path}`, {
-    ...options,
+    ...request,
     credentials: "include",
     headers
   });
 
   if (response.status === 401 && (await restoreSession())) {
-    const retryHeaders = new Headers(options.headers);
+    const retryHeaders = new Headers(request.headers);
     const refreshedToken = getAccessToken();
     if (refreshedToken) {
       retryHeaders.set("Authorization", `Bearer ${refreshedToken}`);
     }
-    if (!(options.body instanceof FormData)) {
+    if (!(request.body instanceof FormData)) {
       retryHeaders.set("Content-Type", "application/json");
     }
     response = await fetch(`${API_BASE}${path}`, {
-      ...options,
+      ...request,
       credentials: "include",
       headers: retryHeaders
     });
@@ -52,7 +57,7 @@ export async function apiFetch<T>(
   if (response.status === 204) {
     return undefined as T;
   }
-  return response.json() as Promise<T>;
+  return (asBlob ? response.blob() : response.json()) as Promise<T>;
 }
 
 export function getMe() {
@@ -115,6 +120,10 @@ export function listDocuments(projectId: number) {
 
 export function getDocument(documentId: number) {
   return apiFetch<Document>(`/documents/${documentId}`);
+}
+
+export function getDocumentContent(documentId: number) {
+  return apiFetch<Blob>(`/documents/${documentId}/content`, { asBlob: true });
 }
 
 export function uploadDocument(file: File, projectId: number) {

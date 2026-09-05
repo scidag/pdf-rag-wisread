@@ -87,6 +87,21 @@ public class DocumentController {
         return ResponseEntity.ok(documentService.get(userId, documentId));
     }
 
+    /** GET /api/v1/documents/{documentId}/content：获取原始 PDF 供前端预览。
+     * 入参：路径变量 documentId（文档 ID），当前登录用户由 Authentication 解析得到。
+     * 业务含义：校验归属后返回 MinIO 中的 PDF 字节。
+     * 返回：200 OK 及 application/pdf 文件内容。 */
+    @GetMapping("/{documentId}/content")
+    public ResponseEntity<byte[]> content(
+            @PathVariable Long documentId,
+            Authentication authentication
+    ) {
+        Long userId = (Long) authentication.getPrincipal();
+        return ResponseEntity.ok()
+                .contentType(MediaType.APPLICATION_PDF)
+                .body(documentService.getContent(userId, documentId));
+    }
+
     /** DELETE /api/v1/documents/{documentId}：删除文档接口。
      * 入参：路径变量 documentId（文档 ID），当前登录用户由 Authentication 解析得到。
      * 业务含义：从项目中移除指定文档及其相关向量数据。

@@ -18,6 +18,7 @@ import org.springframework.test.util.ReflectionTestUtils;
 
 import java.util.Optional;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.verify;
@@ -145,6 +146,21 @@ class DocumentServiceTest {
                 .isInstanceOf(ApiException.class)
                 .extracting("status")
                 .isEqualTo(HttpStatus.NOT_FOUND);
+    }
+
+    @Test
+    void getContentReadsOwnedDocumentPdf() {
+        Document document = new Document();
+        document.setUserId(USER_ID);
+        document.setFileKey("1/preview.pdf");
+        when(documentRepository.findByUserIdAndId(USER_ID, 10L))
+                .thenReturn(Optional.of(document));
+        when(minioStorageService.getObject("1/preview.pdf")).thenReturn(new byte[]{1, 2, 3});
+
+        byte[] content = documentService.getContent(USER_ID, 10L);
+
+        assertThat(content).containsExactly(1, 2, 3);
+        verify(minioStorageService).getObject("1/preview.pdf");
     }
 
     @Test
