@@ -44,7 +44,6 @@ mybatis-plus:
 
 server:
   port: 8080
-  forward-headers-strategy: framework
   tomcat:
     # 默认 2MB：超限请求会被直接断连（浏览器表现为 Failed to fetch / ERR_CONNECTION_RESET），
     # 调大后服务端能吞掉剩余请求体并正常返回 413 JSON。
@@ -62,9 +61,29 @@ logging:
 
 wisread:
   jwt:
-    secret: ${JWT_SECRET:wisread-dev-secret-change-me-please-32bytes}
+    # 双密钥：current 签发+校验；previous 仅校验（密钥无感轮换，FR-4）
+    secret-current: ${JWT_SECRET_CURRENT:wisread-dev-secret-change-me-please-32bytes}
+    secret-previous: ${JWT_SECRET_PREVIOUS:}
     access-token-ttl: 15m
-    refresh-token-ttl: 7d
+    # FR-5：refresh 会话绝对有效期（自登录起 24 小时，轮换不延长）
+    refresh-token-ttl: 24h
+  auth:
+    # FR-6：哑哈希（未配置时启动随机生成，时延特征一致）
+    # dummy-password-hash: <BCrypt 串>
+    refresh-grace-window: 5m
+    refresh-grace-strict-ip: false
+    # R1→R2 过渡：接受无 typ 声明的旧 refresh token（access 侧始终强制校验）
+    legacy-typ-accepted: true
+  session:
+    # AES-256-GCM 密钥（Base64 的 32 字节），FR-8 宽限重发用
+    cipher-key: ${SESSION_CIPHER_KEY:d2VpcndlaS1kZXYtY2lwaGVyLWtleS0zMmJ5dGVzIQ==}
+  session-store:
+    # postgres | redis-migrate | redis（FR-7 分阶段迁移）
+    mode: ${WISREAD_SESSION_STORE_MODE:postgres}
+  trust-proxy: ${WISREAD_TRUST_PROXY:false}
+  ratelimit:
+    auth-per-minute: 10
+    refresh-per-minute: 30
   cors:
     allowed-origins: ${WISREAD_CORS_ALLOWED_ORIGINS:http://localhost:3000,http://127.0.0.1:3000}
   minio:

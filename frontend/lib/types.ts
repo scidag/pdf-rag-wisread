@@ -55,7 +55,7 @@ export interface Message {
 
 export interface AuthResponse {
   accessToken: string;
-  refreshToken: string;
+  // refreshToken 一律且仅通过 HttpOnly Cookie 下发（FR-3），响应体不再包含
   expiresIn: number;
   user: User;
 }

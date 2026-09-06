@@ -44,6 +44,20 @@ public interface UserSessionRepository extends BaseRepository<UserSession> {
     }
 
     /**
+     * 根据刷新令牌哈希查询会话（不做有效期过滤）。
+     *
+     * <p>用于登出清理与 Redis 迁移时的行删除定位：即便会话已过期，
+     * 行也应被找到并删除，避免 user_sessions 表无限增长。
+     *
+     * @param refreshTokenHash 刷新令牌哈希值
+     * @return 命中的会话 Optional（可能已过期）
+     */
+    default Optional<UserSession> findByRefreshTokenHash(String refreshTokenHash) {
+        return Optional.ofNullable(selectOne(new LambdaQueryWrapper<UserSession>()
+                .eq(UserSession::getRefreshTokenHash, refreshTokenHash)));
+    }
+
+    /**
      * 删除指定用户的全部会话（用于登出/注销时清理登录态）。
      *
      * @param userId 用户 id
