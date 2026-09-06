@@ -8,6 +8,8 @@ import com.wisread.service.QueryRewriteService;
 import com.wisread.service.RerankService;
 import com.wisread.service.TokenCounter;
 import com.wisread.service.UsageLogService;
+import com.wisread.service.UserMemoryExtractionService;
+import com.wisread.service.UserMemoryService;
 import com.wisread.service.VectorIndexingService;
 
 import com.wisread.dto.ChatRequest;
@@ -15,6 +17,7 @@ import com.wisread.dto.SourceResponse;
 import com.wisread.entity.AnswerSource;
 import com.wisread.entity.Conversation;
 import com.wisread.entity.Document;
+import com.wisread.entity.UserMemory;
 import com.wisread.exception.ApiException;
 import com.wisread.model.ChunkSearchResult;
 import com.wisread.repository.AnswerSourceRepository;
@@ -28,8 +31,10 @@ import io.micrometer.core.instrument.Timer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.ai.chat.messages.AssistantMessage;
+import org.springframework.ai.chat.messages.Message;
 import org.springframework.ai.chat.messages.SystemMessage;
 import org.springframework.ai.chat.messages.UserMessage;
+import org.springframework.ai.chat.memory.ChatMemory;
 import org.springframework.ai.chat.model.ChatModel;
 import org.springframework.ai.chat.prompt.Prompt;
 import org.springframework.beans.factory.annotation.Qualifier;
@@ -93,16 +98,22 @@ public class ChatServiceImpl implements ChatService {
     private final UsageLogService usageLogService;
     private final ChatLogService chatLogService;
     private final ChatModel chatModel;
+    private final ChatMemory chatMemory;
+    private final UserMemoryService userMemoryService;
+    private final UserMemoryExtractionService userMemoryExtractionService;
     private final String chatModelName;
     private final Executor executor;
     private final Semaphore chatSemaphore;
     private final int maxHistoryTokens;
     private final long slowThresholdMs;
     private final int topK;
+    private final int injectTopK;
+    private final boolean memoryEnabled;
     private final Timer queueWaitTimer;
     private final Timer ttftTimer;
     private final Timer totalTimer;
     private final Counter rejectionCounter;
+    private final Counter memoryInjectHits;
 
     public ChatServiceImpl(
             ConversationRepository conversationRepository,
@@ -118,9 +129,14 @@ public class ChatServiceImpl implements ChatService {
             TokenCounter tokenCounter,
             UsageLogService usageLogService,
             ChatLogService chatLogService,
-            @Value("${spring.ai.openai.chat.options.model:qwen3.7-plus}") String chatModelName,
+            @Value("${spring.ai.dashscope.chat.options.model:qwen3.7-plus}") String chatModelName,
             ChatModel chatModel,
+            ChatMemory chatMemory,
+            UserMemoryService userMemoryService,
+            UserMemoryExtractionService userMemoryExtractionService,
             @Value("${wisread.retrieval.top-k:10}") int topK,
+            @Value("${wisread.user-memory.inject-top-k:3}") int injectTopK,
+            @Value("${wisread.user-memory.enabled:true}") boolean memoryEnabled,
             @Value("${wisread.chat.max-concurrent:8}") int maxConcurrent,
             @Value("${wisread.chat.max-history-tokens:2000}") int maxHistoryTokens,
             @Value("${wisread.chat.slow-threshold-ms:10000}") long slowThresholdMs,
@@ -141,8 +157,13 @@ public class ChatServiceImpl implements ChatService {
         this.usageLogService = usageLogService;
         this.chatLogService = chatLogService;
         this.chatModel = chatModel;
+        this.chatMemory = chatMemory;
+        this.userMemoryService = userMemoryService;
+        this.userMemoryExtractionService = userMemoryExtractionService;
         this.chatModelName = chatModelName;
         this.topK = topK;
+        this.injectTopK = injectTopK;
+        this.memoryEnabled = memoryEnabled;
         this.chatSemaphore = new Semaphore(maxConcurrent);
         this.maxHistoryTokens = maxHistoryTokens;
         this.slowThresholdMs = slowThresholdMs;
@@ -151,6 +172,7 @@ public class ChatServiceImpl implements ChatService {
         this.ttftTimer = meterRegistry.timer("wisread.chat.ttft");
         this.totalTimer = meterRegistry.timer("wisread.chat.total");
         this.rejectionCounter = meterRegistry.counter("wisread.chat.rejections");
+        this.memoryInjectHits = meterRegistry.counter("wisread.usermemory.inject.hits");
     }
 
     /**
@@ -230,6 +252,14 @@ public class ChatServiceImpl implements ChatService {
                     queryEmbedding,
                     topK
             );
+            // L2 长期记忆检索：复用同一 query 向量（一次 Embedding 两处复用），按用户强隔离；
+            // 总开关关闭时旁路（零开销），命中则计数供监控区分注入效果
+            List<UserMemory> memories = memoryEnabled
+                    ? userMemoryService.search(conversation.getUserId(), queryEmbedding, injectTopK)
+                    : List.of();
+            if (!memories.isEmpty()) {
+                memoryInjectHits.increment();
+            }
             // 重排（当前实现仅截前 3，见 RerankServiceImpl）
             List<ChunkSearchResult> chunks = rerankService.rerank(query, candidates);
             // 记录本次提问：问题、模型、检索内容与来源文档
@@ -240,12 +270,13 @@ public class ChatServiceImpl implements ChatService {
             // 距离阈值拒答：最优候选距离过大（>0.65）说明文档中没有可靠依据，
             // 直接返回固定文案，防止大模型在无依据时幻觉编造
             if (chunks.isEmpty() || chunks.get(0).distance() > DISTANCE_THRESHOLD) {
-                sendNoAnswer(conversation.getId(), emitter);
+                sendNoAnswer(conversation, request.content(), emitter);
                 return;
             }
 
-            // 用检索块 + 历史构建带编号引用的 Prompt
-            Prompt prompt = buildPrompt(query, chunks, history);
+            // 用检索块 + Redis 记忆窗口 + 长期记忆构建带编号引用的 Prompt
+            List<Message> memoryWindow = chatMemory.get(String.valueOf(conversation.getId()));
+            Prompt prompt = buildPrompt(query, chunks, memoryWindow, memories);
             int promptTokens = countPromptTokens(prompt);
             StringBuilder answer = new StringBuilder();
             try {
@@ -297,6 +328,16 @@ public class ChatServiceImpl implements ChatService {
                             totalTimer.record(totalMs, TimeUnit.MILLISECONDS);
                             if (totalMs > slowThresholdMs) {
                                 log.warn("Chat slow totalMs={} conversationId={}", totalMs, conversation.getId());
+                            }
+                            // 把本轮问答写回 Redis 记忆窗口（尽力而为，失败不影响 SSE 收尾）
+                            appendToMemory(conversation.getId(),
+                                    new UserMessage(request.content()),
+                                    answer.isEmpty() ? null : new AssistantMessage(answer.toString()));
+                            // 异步沉淀长期记忆（旁路任务，失败只记日志不影响收尾）
+                            if (memoryEnabled) {
+                                userMemoryExtractionService.extractAsync(
+                                        conversation.getUserId(), conversation.getId(),
+                                        request.content(), answer.toString());
                             }
                             completeAnswer(conversation, chunks, answer.toString(), emitter, promptTokens);
                         }
@@ -427,17 +468,43 @@ public class ChatServiceImpl implements ChatService {
 
     /**
      * 无可靠依据时的拒答处理：返回固定文案、落库、推送 done 事件。
+     * 本轮问答同样写回记忆窗口，保证后续追问（如“换个说法再问”）的上下文完整。
      */
-    private void sendNoAnswer(Long conversationId, SseEmitter emitter) {
+    private void sendNoAnswer(Conversation conversation, String question, SseEmitter emitter) {
         try {
             String answer = "文档中没有找到相关信息";
-            persistAssistantMessage(conversationId, answer);
+            persistAssistantMessage(conversation.getId(), answer);
+            appendToMemory(conversation.getId(),
+                    new UserMessage(question),
+                    new AssistantMessage(answer));
+            // 拒答轮次同样沉淀长期记忆：用户提问中的画像信息与是否命中文档无关
+            if (memoryEnabled) {
+                userMemoryExtractionService.extractAsync(conversation.getUserId(), conversation.getId(), question, answer);
+            }
             emitter.send(SseEmitter.event()
                     .name("done")
                     .data(Map.of("content", answer, "sources", List.of())));
             emitter.complete();
         } catch (Exception exception) {
             completeEmitterWithError(emitter, exception);
+        }
+    }
+
+    /**
+     * 把本轮问答写入 Redis 记忆窗口（写入的是用户原始问题，而非改写后的检索 query）。
+     *
+     * <p>为什么尽力而为：记忆窗口只是热上下文，写失败仅影响下一轮多轮质量，
+     * 不应打断 SSE 收尾或向上抛错；窗口裁剪（20 条）由 MessageWindowChatMemory 托管。
+     */
+    private void appendToMemory(Long conversationId, UserMessage userMessage, AssistantMessage assistantMessage) {
+        try {
+            String memoryId = String.valueOf(conversationId);
+            chatMemory.add(memoryId, userMessage);
+            if (assistantMessage != null) {
+                chatMemory.add(memoryId, assistantMessage);
+            }
+        } catch (Exception exception) {
+            log.warn("append chat memory failed conversationId={}", conversationId, exception);
         }
     }
 
@@ -461,15 +528,19 @@ public class ChatServiceImpl implements ChatService {
      * <ol>
      *   <li>系统提示明确“仅依据给定文档作答、无依据则固定拒答、引用必须使用 [1]..[3] 编号且禁止编造”。</li>
      *   <li>按块顺序注入 [i] 编号 + 文件名 + 页码 + 正文，编号由后端统一分配。</li>
-     *   <li>追加历史对话（user/assistant）与当前改写后的问题，形成多轮上下文。</li>
+     *   <li>追加用户长期记忆区（独立 section、不编号），供个性化回答但不得作为文档依据。</li>
+     *   <li>追加 Redis 记忆窗口内的多轮历史（时间正序、已按窗口裁剪）与当前改写后的问题。</li>
      * </ol>
      * 为什么：编号由后端注入而非模型自定，使答案中的 [i] 能稳定映射到 AnswerSource，
      * 保证引用可点击、可追溯，杜绝模型臆造不存在的引用。
+     * 历史来源说明：模型上下文走 ChatMemory（Redis 热窗口），messages 表是业务档案，
+     * 两者内容一致（双写），但读取路径分离；长期记忆与文档块编号隔离，避免污染引用溯源。
      */
     private Prompt buildPrompt(
             String question,
             List<ChunkSearchResult> chunks,
-            List<com.wisread.entity.Message> history
+            List<Message> history,
+            List<UserMemory> memories
     ) {
         StringBuilder system = new StringBuilder(
                 "你只能根据提供的文档内容回答。\n"
@@ -490,17 +561,20 @@ public class ChatServiceImpl implements ChatService {
                     .append(chunk.content())
                     .append("\n");
         }
-
-        List<org.springframework.ai.chat.messages.Message> messages = new ArrayList<>();
-        messages.add(new SystemMessage(system.toString()));
-        // 重建多轮上下文，按角色映射为 User/Assistant 消息
-        for (com.wisread.entity.Message historyMessage : history) {
-            if ("user".equals(historyMessage.getRole())) {
-                messages.add(new UserMessage(historyMessage.getContent()));
-            } else if ("assistant".equals(historyMessage.getRole())) {
-                messages.add(new AssistantMessage(historyMessage.getContent()));
+        // 长期记忆独立 section：不参与 [i] 编号，只作个性化背景，防止污染引用体系
+        if (!memories.isEmpty()) {
+            system.append("\n以下是关于该用户的长期背景信息，可用于个性化回答，\n")
+                    .append("但不得将其作为文档依据引用：\n\n")
+                    .append("[用户背景]\n");
+            for (UserMemory memory : memories) {
+                system.append("- ").append(memory.getContent()).append("\n");
             }
         }
+
+        List<Message> messages = new ArrayList<>();
+        messages.add(new SystemMessage(system.toString()));
+        // Redis 记忆窗口内的多轮上下文（user/assistant 已由写入时按角色标记）
+        messages.addAll(history);
         messages.add(new UserMessage(question));
         return new Prompt(messages);
     }

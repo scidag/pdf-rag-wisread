@@ -39,7 +39,7 @@ public class QueryRewriteServiceImpl implements QueryRewriteService {
             ChatModel chatModel,
             TokenCounter tokenCounter,
             UsageLogService usageLogService,
-            @Value("${spring.ai.openai.chat.options.model:qwen3.7-plus}") String chatModelName
+            @Value("${spring.ai.dashscope.chat.options.model:qwen3.7-plus}") String chatModelName
     ) {
         this.chatModel = chatModel;
         this.tokenCounter = tokenCounter;

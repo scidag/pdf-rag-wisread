@@ -21,7 +21,30 @@
         <jjwt.version>0.12.6</jjwt.version>
         <minio.version>8.5.17</minio.version>
         <pdfbox.version>3.0.8</pdfbox.version>
+        <spring-ai.version>1.0.0</spring-ai.version>
+        <spring-ai-alibaba.version>1.0.0.2</spring-ai-alibaba.version>
     </properties>
+
+    <dependencyManagement>
+        <dependencies>
+            <!-- Spring AI GA BOM：dashscope starter 与本工程 API 的对齐基线，禁止单独上调 -->
+            <dependency>
+                <groupId>org.springframework.ai</groupId>
+                <artifactId>spring-ai-bom</artifactId>
+                <version>${spring-ai.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+            <!-- Spring AI Alibaba BOM：只管理自身模块，spring-ai 版本由上面的 BOM 托管 -->
+            <dependency>
+                <groupId>com.alibaba.cloud.ai</groupId>
+                <artifactId>spring-ai-alibaba-bom</artifactId>
+                <version>${spring-ai-alibaba.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+        </dependencies>
+    </dependencyManagement>
 
     <dependencies>
         <dependency>
@@ -70,10 +93,25 @@
             <groupId>org.flywaydb</groupId>
             <artifactId>flyway-database-postgresql</artifactId>
         </dependency>
+        <!-- DashScope 原生协议接入（百炼）：chat + embedding，版本由 spring-ai-alibaba-bom 托管 -->
         <dependency>
-            <groupId>org.springframework.ai</groupId>
-            <artifactId>spring-ai-openai-spring-boot-starter</artifactId>
-            <version>1.0.0-M6</version>
+            <groupId>com.alibaba.cloud.ai</groupId>
+            <artifactId>spring-ai-alibaba-starter-dashscope</artifactId>
+        </dependency>
+        <!-- L1 会话记忆组件：仅引 Redis 仓库实现（避免聚合 starter 把 JDBC/ES 记忆自动装配全部带进来），Bean 手写 -->
+        <dependency>
+            <groupId>com.alibaba.cloud.ai</groupId>
+            <artifactId>spring-ai-alibaba-starter-memory-redis</artifactId>
+        </dependency>
+        <!-- memory-redis 的 jedis 为 optional 传递，需显式引入（版本由 Boot parent 管理） -->
+        <dependency>
+            <groupId>redis.clients</groupId>
+            <artifactId>jedis</artifactId>
+        </dependency>
+        <!-- DashScope 流式调用依赖 WebClient，starter 不传递 webflux，必须显式引入 -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-webflux</artifactId>
         </dependency>
         <dependency>
             <groupId>io.minio</groupId>
@@ -113,13 +151,6 @@
             <scope>test</scope>
         </dependency>
     </dependencies>
-
-    <repositories>
-        <repository>
-            <id>spring-milestones</id>
-            <url>https://repo.spring.io/milestone</url>
-        </repository>
-    </repositories>
 
     <build>
         <plugins>

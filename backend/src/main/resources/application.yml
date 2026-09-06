@@ -19,12 +19,10 @@ spring:
   flyway:
     enabled: true
   ai:
-    model:
-      chat: openai
-      embedding: openai
-    openai:
+    dashscope:
       api-key: ${DASHSCOPE_API_KEY}
-      base-url: ${DASHSCOPE_BASE_URL:https://llm-kel2sus4xmrwoah1.cn-beijing.maas.aliyuncs.com/compatible-mode}
+      # DashScope 原生协议域名，SDK 自行拼接 /api/v1/services/...，严禁带 /compatible-mode
+      base-url: ${DASHSCOPE_NATIVE_BASE_URL:https://dashscope.aliyuncs.com}
       chat:
         options:
           model: qwen3.7-plus
@@ -32,6 +30,8 @@ spring:
       embedding:
         options:
           model: qwen3.7-text-embedding
+          # 显式锁定维度，与 document_chunks.embedding VECTOR(1024) 对齐
+          dimensions: 1024
 
 mybatis-plus:
   configuration:
@@ -81,6 +81,14 @@ wisread:
     # postgres | redis-migrate | redis（FR-7 分阶段迁移）
     mode: ${WISREAD_SESSION_STORE_MODE:postgres}
   trust-proxy: ${WISREAD_TRUST_PROXY:false}
+  user-memory:
+    # L2 长期记忆总开关：关闭时注入与提取均旁路（零开销）
+    enabled: ${WISREAD_USER_MEMORY_ENABLED:true}
+    inject-top-k: 3              # 每次问答注入的记忆条数
+    inject-min-similarity: 0.55  # 注入最低余弦相似度（1 - pgvector 距离）
+    dedup-similarity: 0.92       # 去重阈值：相似度达到即视为同一条信息，旧记忆置 SUPERSEDED
+    max-memories-per-user: 200   # 单用户 ACTIVE 记忆上限，超出按重要性+时间淘汰
+    extract-enabled: ${WISREAD_USER_MEMORY_EXTRACT_ENABLED:true}  # 提取独立开关（注入稳定前可只读不写）
   ratelimit:
     auth-per-minute: 10
     refresh-per-minute: 30
