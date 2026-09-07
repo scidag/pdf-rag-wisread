@@ -42,6 +42,8 @@ jobs:
           key: ${{ secrets.SERVER_SSH_KEY }}
           port: ${{ secrets.SERVER_PORT }}
           source: "deploy/docker-compose.prod.yml"
+          # scp-action 会保留目录结构，去掉 deploy/ 前缀，落到 /opt/wisread/docker-compose.prod.yml
+          strip_components: 1
           target: "/opt/wisread"
 
       - name: Deploy on server
