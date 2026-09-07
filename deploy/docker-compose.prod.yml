@@ -1,0 +1,94 @@
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: wisread-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      TZ: Asia/Shanghai
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  minio:
+    image: minio/minio:latest
+    container_name: wisread-minio
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+      TZ: Asia/Shanghai
+    volumes:
+      - minio_data:/data
+
+  redis:
+    image: redis:7-alpine
+    container_name: wisread-redis
+    restart: unless-stopped
+    # L1 会话热窗口记忆始终走 Redis；AOF 保证重启不丢
+    command: redis-server --appendonly yes
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  backend:
+    image: wisread-backend:latest
+    container_name: wisread-backend
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_started
+    environment:
+      TZ: Asia/Shanghai
+      POSTGRES_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
+      DASHSCOPE_API_KEY: ${DASHSCOPE_API_KEY}
+      DASHSCOPE_NATIVE_BASE_URL: ${DASHSCOPE_NATIVE_BASE_URL}
+      DASHSCOPE_CHAT_MODEL: ${DASHSCOPE_CHAT_MODEL}
+      DASHSCOPE_CHAT_MULTI_MODEL: ${DASHSCOPE_CHAT_MULTI_MODEL}
+      JWT_SECRET_CURRENT: ${JWT_SECRET_CURRENT}
+      JWT_SECRET_PREVIOUS: ${JWT_SECRET_PREVIOUS}
+      SESSION_CIPHER_KEY: ${SESSION_CIPHER_KEY}
+      WISREAD_LEGACY_TYP_ACCEPTED: ${WISREAD_LEGACY_TYP_ACCEPTED}
+      WISREAD_SESSION_STORE_MODE: ${WISREAD_SESSION_STORE_MODE}
+      WISREAD_TRUST_PROXY: ${WISREAD_TRUST_PROXY}
+      WISREAD_USER_MEMORY_ENABLED: ${WISREAD_USER_MEMORY_ENABLED}
+      WISREAD_USER_MEMORY_EXTRACT_ENABLED: ${WISREAD_USER_MEMORY_EXTRACT_ENABLED}
+      WISREAD_CORS_ALLOWED_ORIGINS: ${WISREAD_CORS_ALLOWED_ORIGINS}
+      # 后端在容器内网访问 MinIO，必须用 minio:9000，不能沿用本机的 localhost:9002
+      MINIO_ENDPOINT: http://minio:9000
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+      MINIO_BUCKET: ${MINIO_BUCKET}
+
+  frontend:
+    image: wisread-frontend:latest
+    container_name: wisread-frontend
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+
+volumes:
+  postgres_data:
+  minio_data:
+  redis_data:

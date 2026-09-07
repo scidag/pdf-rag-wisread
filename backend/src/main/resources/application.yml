@@ -73,7 +73,7 @@ wisread:
     refresh-grace-window: 5m
     refresh-grace-strict-ip: false
     # R1→R2 过渡：接受无 typ 声明的旧 refresh token（access 侧始终强制校验）
-    legacy-typ-accepted: true
+    legacy-typ-accepted: ${WISREAD_LEGACY_TYP_ACCEPTED:true}
   session:
     # AES-256-GCM 密钥（Base64 的 32 字节），FR-8 宽限重发用
     cipher-key: ${SESSION_CIPHER_KEY:d2VpcndlaS1kZXYtY2lwaGVyLWtleS0zMmJ5dGVzIQ==}

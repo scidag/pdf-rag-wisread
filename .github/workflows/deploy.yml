@@ -1,0 +1,61 @@
+name: Deploy Wisread
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - feat/wisread-mvp-phase1
+      - main
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build backend image
+        run: docker build -t wisread-backend:latest ./backend
+
+      - name: Build frontend image
+        run: docker build -t wisread-frontend:latest ./frontend
+
+      # 两个镜像打包成一个压缩包（约 500MB）
+      - name: Pack images
+        run: docker save wisread-backend:latest wisread-frontend:latest | gzip > wisread-images.tar.gz
+
+      - name: Upload images to server
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USER }}
+          key: ${{ secrets.SERVER_SSH_KEY }}
+          port: ${{ secrets.SERVER_PORT }}
+          source: "wisread-images.tar.gz"
+          target: "/opt/wisread"
+          timeout: "30m"
+
+      - name: Upload compose file
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USER }}
+          key: ${{ secrets.SERVER_SSH_KEY }}
+          port: ${{ secrets.SERVER_PORT }}
+          source: "deploy/docker-compose.prod.yml"
+          target: "/opt/wisread"
+
+      - name: Deploy on server
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USER }}
+          key: ${{ secrets.SERVER_SSH_KEY }}
+          port: ${{ secrets.SERVER_PORT }}
+          command_timeout: 30m
+          script: |
+            set -e
+            cd /opt/wisread
+            gunzip -c wisread-images.tar.gz | docker load
+            rm -f wisread-images.tar.gz
+            docker compose --env-file .env -f docker-compose.prod.yml up -d --remove-orphans
+            docker image prune -f
