@@ -25,6 +25,11 @@ spring:
       # 默认值 = 百炼专用推理端点（2026-09-06 实测验证）；容器内没有 prod.yml，靠环境变量覆盖
       base-url: ${DASHSCOPE_NATIVE_BASE_URL:https://llm-kel2sus4xmrwoah1.cn-beijing.maas.aliyuncs.com}
       chat:
+        # 坑（spring-ai-alibaba 1.0.0.2 库级问题）：DashScopeChatProperties 构造器硬编码
+        # base-url=https://dashscope.aliyuncs.com（非 null），属性解析「子级非空则用子级」，
+        # 父级 spring.ai.dashscope.base-url 永远被 chat 忽略，请求全部打到公共域名。
+        # 必须在 chat 层显式覆盖 base-url 才能走百炼专用端点（embedding 无此问题）。
+        base-url: ${DASHSCOPE_NATIVE_BASE_URL:https://llm-kel2sus4xmrwoah1.cn-beijing.maas.aliyuncs.com}
         options:
           model: ${DASHSCOPE_CHAT_MODEL:qwen3.7-max-2026-06-08}
           temperature: 0.7
