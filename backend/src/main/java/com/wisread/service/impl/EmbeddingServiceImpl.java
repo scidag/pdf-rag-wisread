@@ -15,7 +15,7 @@ import java.util.List;
  * 文本向量化服务的实现。
  * 实现要点：基于 Spring AI 的 {@link EmbeddingModel} 调用远端 Embedding 模型；
  * 以批大小 {@code MAX_BATCH_SIZE=20} 分批请求以降低网络往返开销；模型名来自配置文件
- * （默认 qwen3.7-text-embedding，可用 {@code spring.ai.dashscope.embedding.options.model} 覆盖）；
+ * （默认 qwen3.7-text-embedding-flash，可用 {@code spring.ai.dashscope.embedding.options.model} 覆盖）；
  * 每批完成后按 userId 记录输入 token 用量（output 为 0，Embedding 无生成输出）。
  */
 @Service
@@ -33,7 +33,7 @@ public class EmbeddingServiceImpl implements EmbeddingService {
             EmbeddingModel embeddingModel,
             UsageLogService usageLogService,
             TokenCounter tokenCounter,
-            @Value("${spring.ai.dashscope.embedding.options.model:qwen3.7-text-embedding}") String embeddingModelName
+            @Value("${spring.ai.dashscope.embedding.options.model:qwen3.7-text-embedding-flash}") String embeddingModelName
     ) {
         this.embeddingModel = embeddingModel;
         this.usageLogService = usageLogService;

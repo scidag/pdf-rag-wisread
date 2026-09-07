@@ -67,7 +67,7 @@ public class UserMemoryServiceImpl implements UserMemoryService {
             UserMemoryRepository userMemoryRepository,
             JdbcTemplate jdbcTemplate,
             EmbeddingService embeddingService,
-            @Value("${spring.ai.dashscope.embedding.options.model:qwen3.7-text-embedding}") String embeddingModelVersion
+            @Value("${spring.ai.dashscope.embedding.options.model:qwen3.7-text-embedding-flash}") String embeddingModelVersion
     ) {
         this.userMemoryRepository = userMemoryRepository;
         this.jdbcTemplate = jdbcTemplate;

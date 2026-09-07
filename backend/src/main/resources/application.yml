@@ -38,7 +38,7 @@ spring:
           multi-model: ${DASHSCOPE_CHAT_MULTI_MODEL:true}
       embedding:
         options:
-          model: qwen3.7-text-embedding
+          model: qwen3.7-text-embedding-flash
           # 显式锁定维度，与 document_chunks.embedding VECTOR(1024) 对齐
           dimensions: 1024
 

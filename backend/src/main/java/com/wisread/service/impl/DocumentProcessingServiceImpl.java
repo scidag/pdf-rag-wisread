@@ -72,7 +72,7 @@ public class DocumentProcessingServiceImpl implements DocumentProcessingService 
             EmbeddingService embeddingService,
             VectorIndexingService vectorIndexingService,
             MinioStorageService minioStorageService,
-            @Value("${spring.ai.dashscope.embedding.options.model:qwen3.7-text-embedding}") String embeddingModelVersion
+            @Value("${spring.ai.dashscope.embedding.options.model:qwen3.7-text-embedding-flash}") String embeddingModelVersion
     ) {
         this.documentRepository = documentRepository;
         this.documentJobRepository = documentJobRepository;
