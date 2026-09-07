@@ -32,7 +32,7 @@ public class GlobalExceptionHandler {
 
     /**
      * 处理参数校验失败（@Valid 注解触发）。
-     * 提取首个字段错误信息（字段名 + 默认消息）返回 400。
+     * 提取首个字段错误消息返回 400；消息文案由各 DTO 的注解 message 指定（中文）。
      */
     @ExceptionHandler(MethodArgumentNotValidException.class)
     public ResponseEntity<ErrorResponse> handleValidation(MethodArgumentNotValidException exception) {
@@ -40,8 +40,8 @@ public class GlobalExceptionHandler {
                 .getFieldErrors()
                 .stream()
                 .findFirst()
-                .map(error -> error.getField() + " " + error.getDefaultMessage())
-                .orElse("invalid request");
+                .map(error -> error.getDefaultMessage())
+                .orElse("请求参数不合法");
         return ResponseEntity
                 .status(HttpStatus.BAD_REQUEST)
                 .body(new ErrorResponse(HttpStatus.BAD_REQUEST.value(), message));

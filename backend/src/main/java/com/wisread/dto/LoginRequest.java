@@ -9,8 +9,11 @@ import jakarta.validation.constraints.NotBlank;
  */
 public record LoginRequest(
         // 用户邮箱；不能为空且必须符合邮箱格式
-        @NotBlank @Email String email,
+        @NotBlank(message = "邮箱不能为空")
+        @Email(message = "邮箱格式不正确")
+        String email,
         // 用户密码；不能为空
-        @NotBlank String password
+        @NotBlank(message = "密码不能为空")
+        String password
 ) {
 }

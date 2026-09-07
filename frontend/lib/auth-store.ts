@@ -80,9 +80,18 @@ export async function logout(): Promise<void> {
 }
 
 async function readJson(response: Response): Promise<AuthResponse> {
-  const data = await response.json();
+  const raw = await response.text();
+  let data: (AuthResponse & { message?: string }) | null = null;
+  try {
+    data = raw ? JSON.parse(raw) : null;
+  } catch {
+    // 服务端返回了非 JSON 内容（如网关/错误页 HTML），data 保持 null
+  }
   if (!response.ok) {
-    throw new Error(data?.message ?? "请求失败");
+    throw new Error(data?.message ?? `请求失败（HTTP ${response.status}），请稍后重试`);
+  }
+  if (!data || !("accessToken" in data)) {
+    throw new Error(`服务响应异常（HTTP ${response.status}），请稍后重试`);
   }
   return data as AuthResponse;
 }
