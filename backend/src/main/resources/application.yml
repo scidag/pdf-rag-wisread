@@ -21,12 +21,16 @@ spring:
   ai:
     dashscope:
       api-key: ${DASHSCOPE_API_KEY}
-      # DashScope 原生协议域名，SDK 自行拼接 /api/v1/services/...，严禁带 /compatible-mode
-      base-url: ${DASHSCOPE_NATIVE_BASE_URL:https://dashscope.aliyuncs.com}
+      # DashScope 原生协议域名，SDK 自行拼接 /api/v1/services/...，严禁带 /compatible-mode。
+      # 默认值 = 百炼专用推理端点（2026-09-06 实测验证）；容器内没有 prod.yml，靠环境变量覆盖
+      base-url: ${DASHSCOPE_NATIVE_BASE_URL:https://llm-kel2sus4xmrwoah1.cn-beijing.maas.aliyuncs.com}
       chat:
         options:
-          model: qwen3.7-plus
+          model: ${DASHSCOPE_CHAT_MODEL:qwen3.7-max-2026-06-08}
           temperature: 0.7
+          # qwen3.7-max 系列被 DashScope 归为多模态路由，text-generation 端点直接 403，
+          # 必须开启 multi-model 让 SDK 改走 multimodal-generation 端点（2026-09-06 实测验证通过）
+          multi-model: ${DASHSCOPE_CHAT_MULTI_MODEL:true}
       embedding:
         options:
           model: qwen3.7-text-embedding
