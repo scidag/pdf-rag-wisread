@@ -1,7 +1,9 @@
 FROM maven:3.9-eclipse-temurin-21 AS build
 WORKDIR /app
 COPY pom.xml .
-RUN mvn -q -B dependency:go-offline
+# go-offline 仅用于预热依赖缓存，偶发 Maven Central 502/超时；
+# 失败不终止构建，缺失依赖由下一步 package 阶段补齐
+RUN mvn -q -B dependency:go-offline || true
 COPY src ./src
 RUN mvn -q -B package -DskipTests
 
