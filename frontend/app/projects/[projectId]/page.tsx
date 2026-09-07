@@ -210,7 +210,17 @@ export default function ProjectDetailPage() {
       setStreamingContent("");
       const message =
         err instanceof Error ? err.message : "问答请求失败，请稍后重试";
-      window.alert(message);
+      // AI 回复失败时插入一条占位助手消息（后端同样落库，刷新后历史一致）
+      setMessages((current) => [
+        ...current,
+        {
+          id: -Date.now(),
+          role: "assistant",
+          content: message,
+          sources: [],
+          createdAt: new Date().toISOString()
+        }
+      ]);
     }
   }
 

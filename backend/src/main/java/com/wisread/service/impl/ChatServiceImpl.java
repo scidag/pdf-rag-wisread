@@ -283,7 +283,7 @@ public class ChatServiceImpl implements ChatService {
                 chatSemaphore.acquire();
             } catch (InterruptedException exception) {
                 Thread.currentThread().interrupt();
-                completeEmitterWithError(emitter, exception);
+                completeEmitterWithError(emitter, conversation.getId(), exception);
                 return;
             }
             long flowStartNanos = System.nanoTime();
@@ -313,13 +313,13 @@ public class ChatServiceImpl implements ChatService {
                                             .data(Map.of("content", token)));
                                 } catch (Exception exception) {
                                     releasePermit.run();
-                                    completeEmitterWithError(emitter, exception);
+                                    completeEmitterWithError(emitter, conversation.getId(), exception);
                                 }
                             }
                         },
                         error -> {
                             releasePermit.run();
-                            completeEmitterWithError(emitter, error);
+                            completeEmitterWithError(emitter, conversation.getId(), error);
                         },
                         // 流结束后落库并回传完整答案与引用来源
                         () -> {
@@ -347,7 +347,7 @@ public class ChatServiceImpl implements ChatService {
                 throw exception;
             }
         } catch (Exception exception) {
-            completeEmitterWithError(emitter, exception);
+            completeEmitterWithError(emitter, conversation.getId(), exception);
         }
     }
 
@@ -355,7 +355,24 @@ public class ChatServiceImpl implements ChatService {
      * SSE 响应已提交后不能再写 JSON 错误体，改为推送 error 事件再结束连接。
      */
     private void completeEmitterWithError(SseEmitter emitter, Throwable exception) {
+        completeEmitterWithError(emitter, null, exception);
+    }
+
+    /**
+     * AI 回复失败时的兜底收尾：先落库一条占位的助手消息（内容与 error 事件文案一致），
+     * 保证刷新后会话历史里提问仍有"回复"，再推送 error 事件并结束连接。
+     * conversationId 传 null 时（真实答案已落库的路径，如 completeAnswer/sendNoAnswer 的收尾失败），
+     * 不落库占位消息，避免历史出现重复回复。
+     */
+    private void completeEmitterWithError(SseEmitter emitter, Long conversationId, Throwable exception) {
         log.warn("Chat SSE error", exception);
+        if (conversationId != null) {
+            try {
+                persistAssistantMessage(conversationId, translateErrorMessage(exception));
+            } catch (Exception persistException) {
+                log.warn("persist failure placeholder failed conversationId={}", conversationId, persistException);
+            }
+        }
         try {
             emitter.send(SseEmitter.event()
                     .name("error")
