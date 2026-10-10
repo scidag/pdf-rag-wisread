@@ -8,6 +8,7 @@ import com.wisread.dto.DocumentResponse;
 import com.wisread.entity.Document;
 import com.wisread.entity.DocumentJob;
 import com.wisread.exception.ApiException;
+import com.wisread.model.DocumentType;
 import com.wisread.repository.DocumentJobRepository;
 import com.wisread.repository.DocumentRepository;
 import com.wisread.repository.ProjectRepository;
@@ -30,7 +31,7 @@ import java.util.concurrent.RejectedExecutionException;
  * <ul>
  *   <li>上传入口：负责参数校验、MinIO 存储、创建 {@code Document}(UPLOADED) 与
  *       {@code DocumentJob}(PENDING) 记录，并同步触发 {@code DocumentProcessingService} 异步处理。</li>
- *   <li>业务约束：项目必填；文件非空、≤100MB、仅 PDF；单项目最多 5 篇文档。</li>
+ *   <li>业务约束：项目必填；文件非空、≤100MB、支持 PDF/DOCX/XLSX/TXT/MD；单项目最多 5 篇文档。</li>
  *   <li>删除：同时清理 MinIO 中的对象与数据库元数据，避免孤儿文件。</li>
  * </ul>
  */
@@ -67,7 +68,7 @@ public class DocumentServiceImpl implements DocumentService {
     /**
      * 上传文档（RAG 知识入库的入口）。
      *
-     * <p>流程：校验项目与文件 → 读字节 → 校验 PDF → 检查单项目文档数上限 →
+     * <p>流程：校验项目与文件 → 读字节 → 校验文档类型与文件头 → 检查单项目文档数上限 →
      * 存入 MinIO → 落库 Document(UPLOADED) 与 DocumentJob(PENDING) → 触发异步解析流水线。
      */
     @Transactional
@@ -88,15 +89,23 @@ public class DocumentServiceImpl implements DocumentService {
             throw new ApiException(HttpStatus.PAYLOAD_TOO_LARGE, "file exceeds 100MB limit");
         }
 
+        // 先按扩展名识别支持的文档类型，避免把不支持的压缩包读进内存
+        DocumentType documentType = DocumentType.fromFilename(file.getOriginalFilename());
+        if (documentType == null) {
+            throw new ApiException(HttpStatus.UNSUPPORTED_MEDIA_TYPE,
+                    "unsupported document type; supported: pdf, docx, xlsx, txt, md");
+        }
+
         byte[] bytes;
         try {
             bytes = file.getBytes();
         } catch (IOException exception) {
             throw new ApiException(HttpStatus.UNPROCESSABLE_ENTITY, "failed to read uploaded file");
         }
-        // 仅支持真实 PDF（校验文件头 %PDF）
-        if (!isPdf(bytes)) {
-            throw new ApiException(HttpStatus.UNSUPPORTED_MEDIA_TYPE, "only PDF files are supported");
+        // 再校验真实文件头，避免伪装扩展名绕过校验
+        if (!matchesMagic(bytes, documentType)) {
+            throw new ApiException(HttpStatus.UNSUPPORTED_MEDIA_TYPE,
+                    "file content does not match its " + documentType.value() + " extension");
         }
         // 单项目文档数上限，避免向量库无限膨胀
         if (documentRepository.countByProjectId(projectId) >= MAX_DOCUMENTS_PER_PROJECT) {
@@ -105,8 +114,8 @@ public class DocumentServiceImpl implements DocumentService {
         }
 
         // 用 userId/uuid 生成唯一对象键，避免文件名冲突
-        String fileKey = userId + "/" + UUID.randomUUID() + ".pdf";
-        minioStorageService.putObject(fileKey, bytes, "application/pdf");
+        String fileKey = userId + "/" + UUID.randomUUID() + documentType.extension();
+        minioStorageService.putObject(fileKey, bytes, documentType.contentType());
 
         // 创建文档记录，初始状态 UPLOADED（待处理）
         Document document = new Document();
@@ -115,6 +124,7 @@ public class DocumentServiceImpl implements DocumentService {
         document.setFilename(file.getOriginalFilename());
         document.setFileKey(fileKey);
         document.setFileSize((long) bytes.length);
+        document.setFileType(documentType.value());
         document.setStatus("UPLOADED");
         documentRepository.insert(document);
 
@@ -197,14 +207,21 @@ public class DocumentServiceImpl implements DocumentService {
     }
 
     /**
-     * 通过文件头（%PDF）判断是否为 PDF 文件。
+     * 校验文件头与扩展名是否一致。PDF 以 %PDF 开头，DOCX/XLSX 以 ZIP 的 PK 魔数开头；
+     * TXT/MD 没有固定魔数，按已识别的扩展名放行。
      */
-    private boolean isPdf(byte[] bytes) {
-        return bytes.length >= 4
-                && bytes[0] == '%'
-                && bytes[1] == 'P'
-                && bytes[2] == 'D'
-                && bytes[3] == 'F';
+    private boolean matchesMagic(byte[] bytes, DocumentType type) {
+        if (type == DocumentType.PDF) {
+            return bytes.length >= 4
+                    && bytes[0] == '%'
+                    && bytes[1] == 'P'
+                    && bytes[2] == 'D'
+                    && bytes[3] == 'F';
+        }
+        if (type == DocumentType.DOCX || type == DocumentType.XLSX) {
+            return bytes.length >= 2 && bytes[0] == 'P' && bytes[1] == 'K';
+        }
+        return true;
     }
 
     private DocumentResponse toResponse(Document document) {
@@ -212,6 +229,7 @@ public class DocumentServiceImpl implements DocumentService {
                 document.getId(),
                 document.getProjectId(),
                 document.getFilename(),
+                document.getFileType(),
                 document.getFileSize(),
                 document.getPageCount(),
                 document.getTokenCount(),

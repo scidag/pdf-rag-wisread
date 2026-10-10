@@ -22,6 +22,7 @@ import {
   listDocuments,
   listProjects
 } from "@/lib/api";
+import { formatDocumentCount } from "@/lib/document-format";
 import type { Conversation, Document, Project, User } from "@/lib/types";
 import Topbar from "@/components/Topbar";
 import ProjectCreateDialog from "@/components/ProjectCreateDialog";
@@ -241,7 +242,7 @@ export default function HomePage() {
           <StatCard
             label="文档额度"
             value={`${stats.docCount} / ${stats.capacity}`}
-            meta="每项目上限 5 个 PDF"
+            meta="每项目上限 5 个文档"
             icon={<Database className="h-3.5 w-3.5" />}
           />
         </section>
@@ -253,7 +254,7 @@ export default function HomePage() {
             </div>
             <h2 className="font-serif text-base font-bold">还没有项目</h2>
             <p className="mt-2 max-w-[380px] text-[0.78rem] leading-[1.7] text-[rgba(160,190,230,0.45)]">
-              新建一个项目，上传 PDF 文档，开始向文档提问。
+              新建一个项目，上传文档，开始向文档提问。
             </p>
           </div>
         ) : (
@@ -276,7 +277,7 @@ export default function HomePage() {
 
               {documents.length === 0 ? (
                 <p className="px-3 py-8 text-center text-[0.78rem] text-[rgba(160,190,230,0.4)]">
-                  暂无文档，进入项目上传 PDF 开始提问
+                  暂无文档，进入项目上传文档开始提问
                 </p>
               ) : (
                 <div className="space-y-[9px]">
@@ -295,7 +296,7 @@ export default function HomePage() {
                           {document.filename}
                         </span>
                         <span className="mt-1 flex items-center gap-2 font-mono text-[0.65rem] text-[rgba(150,185,235,0.42)]">
-                          {document.pageCount ? `${document.pageCount} 页` : ""}
+                          {formatDocumentCount(document.fileType, document.pageCount)}
                           {formatFileSize(document.fileSize)}
                           <span className="truncate">
                             {projectNameOf(document.projectId)}
@@ -315,7 +316,7 @@ export default function HomePage() {
                 className="mt-4 flex w-full items-center justify-center gap-2 rounded-[11px] border border-dashed border-[rgba(80,140,255,0.34)] bg-[rgba(80,140,255,0.05)] px-[14px] py-[11px] text-[0.78rem] font-bold text-[rgba(130,185,255,0.9)] transition hover:border-[rgba(80,140,255,0.55)] hover:bg-[rgba(80,140,255,0.1)]"
               >
                 <Upload className="h-4 w-4 shrink-0" />
-                <span>上传 PDF 开始提问</span>
+                <span>上传文档开始提问</span>
               </button>
             </div>
 

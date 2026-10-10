@@ -13,6 +13,8 @@ public record DocumentResponse(
         Long projectId,
         // 文件名（含扩展名）
         String filename,
+        // 文档类型标识，如 pdf/docx/xlsx/txt/md；老数据可为空
+        String fileType,
         // 文件大小（单位：字节）
         Long fileSize,
         // 文档页数（解析后统计）

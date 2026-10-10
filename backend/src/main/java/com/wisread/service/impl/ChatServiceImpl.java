@@ -572,9 +572,9 @@ public class ChatServiceImpl implements ChatService {
                     .append(i + 1)
                     .append("] 《")
                     .append(chunk.filename())
-                    .append("》 第 ")
-                    .append(chunk.pageStart())
-                    .append(" 页\n")
+                    .append("》 ")
+                    .append(locationText(chunk))
+                    .append("\n")
                     .append(chunk.content())
                     .append("\n");
         }
@@ -594,5 +594,19 @@ public class ChatServiceImpl implements ChatService {
         messages.addAll(history);
         messages.add(new UserMessage(question));
         return new Prompt(messages);
+    }
+
+    /**
+     * 按定位单位拼出可供模型理解的位置文案，避免非 PDF 文档仍被描述为“第 N 页”。
+     */
+    private String locationText(ChunkSearchResult chunk) {
+        String label = chunk.locationLabel() == null ? "页" : chunk.locationLabel();
+        int start = chunk.pageStart();
+        int end = chunk.pageEnd();
+        String range = start == end ? String.valueOf(start) : start + "-" + end;
+        if (label.startsWith("工作表")) {
+            return label + " 第 " + range + " 行";
+        }
+        return "第 " + range + " " + label;
     }
 }

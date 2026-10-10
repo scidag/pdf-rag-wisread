@@ -1,6 +1,7 @@
 package com.wisread.controller;
 
 import com.wisread.dto.DocumentResponse;
+import com.wisread.model.DocumentType;
 import com.wisread.service.DocumentService;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
@@ -87,18 +88,21 @@ public class DocumentController {
         return ResponseEntity.ok(documentService.get(userId, documentId));
     }
 
-    /** GET /api/v1/documents/{documentId}/content：获取原始 PDF 供前端预览。
+    /** GET /api/v1/documents/{documentId}/content：获取原始文件供前端预览或下载。
      * 入参：路径变量 documentId（文档 ID），当前登录用户由 Authentication 解析得到。
-     * 业务含义：校验归属后返回 MinIO 中的 PDF 字节。
-     * 返回：200 OK 及 application/pdf 文件内容。 */
+     * 业务含义：校验归属后返回 MinIO 中的原始文件字节。
+     * 返回：200 OK 及对应文档类型的文件内容。 */
     @GetMapping("/{documentId}/content")
     public ResponseEntity<byte[]> content(
             @PathVariable Long documentId,
             Authentication authentication
     ) {
         Long userId = (Long) authentication.getPrincipal();
+        DocumentType documentType = DocumentType.fromValueOrDefault(
+                documentService.get(userId, documentId).fileType()
+        );
         return ResponseEntity.ok()
-                .contentType(MediaType.APPLICATION_PDF)
+                .contentType(MediaType.parseMediaType(documentType.contentType()))
                 .body(documentService.getContent(userId, documentId));
     }
 

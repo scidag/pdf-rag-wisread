@@ -3,7 +3,7 @@ import "./globals.css";
 
 export const metadata: Metadata = {
   title: "智阅 Wisread",
-  description: "AI PDF 智能阅读与问答助手"
+  description: "AI 文档智能阅读与问答助手"
 };
 
 export default function RootLayout({

@@ -17,12 +17,12 @@ public interface DocumentService {
     /**
      * 上传文档。
      *
-     * <p>做什么：做项目归属与文件校验（非空、≤100MB、PDF），保存到 MinIO，
+     * <p>做什么：做项目归属与文件校验（非空、≤100MB、支持 PDF/DOCX/XLSX/TXT/MD），保存到 MinIO，
      * 创建 {@code UPLOADED} 状态文档记录与 {@code PENDING} 处理任务，并触发异步处理流水线。
      *
      * @param userId    当前用户 ID
      * @param projectId 所属项目 ID（必填，决定知识归属）
-     * @param file      上传的文件（仅支持 PDF）
+     * @param file      上传的文件（支持 PDF/DOCX/XLSX/TXT/MD）
      * @return 已创建文档的响应（初始状态为 UPLOADED）
      */
     DocumentResponse upload(Long userId, Long projectId, MultipartFile file);
@@ -54,11 +54,11 @@ public interface DocumentService {
     DocumentResponse get(Long userId, Long documentId);
 
     /**
-     * 读取文档原始 PDF 内容（用于预览）。
+     * 读取文档原始文件内容（用于预览或下载）。
      *
      * @param userId      当前用户 ID
      * @param documentId  文档 ID
-     * @return PDF 文件字节
+     * @return 原始文件字节
      */
     byte[] getContent(Long userId, Long documentId);
 

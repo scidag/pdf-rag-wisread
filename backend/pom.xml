@@ -21,6 +21,7 @@
         <jjwt.version>0.12.6</jjwt.version>
         <minio.version>8.5.17</minio.version>
         <pdfbox.version>3.0.8</pdfbox.version>
+        <poi.version>5.4.1</poi.version>
         <spring-ai.version>1.0.0</spring-ai.version>
         <spring-ai-alibaba.version>1.0.0.2</spring-ai-alibaba.version>
     </properties>
@@ -122,6 +123,11 @@
             <groupId>org.apache.pdfbox</groupId>
             <artifactId>pdfbox</artifactId>
             <version>${pdfbox.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.poi</groupId>
+            <artifactId>poi-ooxml</artifactId>
+            <version>${poi.version}</version>
         </dependency>
         <dependency>
             <groupId>io.jsonwebtoken</groupId>

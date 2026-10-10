@@ -59,7 +59,13 @@ public class ChunkingServiceImpl implements ChunkingService {
             if (current.length() > 0
                     && tokenCounter.count(current.toString()) + tokenCounter.count(sentence) > MAX_CHUNK_TOKENS
                     && tokenCounter.count(current.toString()) >= MIN_CHUNK_TOKENS) {
-                chunks.add(new TextChunk(current.toString().trim(), page.page(), page.page(), tokenCounter.count(current.toString())));
+                chunks.add(new TextChunk(
+                        current.toString().trim(),
+                        page.page(),
+                        page.pageEnd(),
+                        page.locationLabel(),
+                        tokenCounter.count(current.toString())
+                ));
                 // 切分后，把上一块末尾 OVERLAP_TOKENS 个 token 作为新块的起始，保留上下文连续性
                 current = new StringBuilder(takeTail(current.toString(), OVERLAP_TOKENS));
                 chunkIndex++;
@@ -69,7 +75,13 @@ public class ChunkingServiceImpl implements ChunkingService {
 
         // 收尾：循环结束后剩余内容作为一个块（可能不满 MAX，但已是句边界自然结束）
         if (!current.isEmpty()) {
-            chunks.add(new TextChunk(current.toString().trim(), page.page(), page.page(), tokenCounter.count(current.toString())));
+            chunks.add(new TextChunk(
+                    current.toString().trim(),
+                    page.page(),
+                    page.pageEnd(),
+                    page.locationLabel(),
+                    tokenCounter.count(current.toString())
+            ));
         }
 
         // 保持原顺序拷贝（此处为兼容原实现的直接返回等价写法）

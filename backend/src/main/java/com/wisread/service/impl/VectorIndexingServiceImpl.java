@@ -49,8 +49,8 @@ public class VectorIndexingServiceImpl implements VectorIndexingService {
             jdbcTemplate.update(
                     """
                     INSERT INTO document_chunks
-                        (document_id, user_id, chunk_index, content, page_start, page_end, token_count, embedding, embedding_model_version)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        (document_id, user_id, chunk_index, content, page_start, page_end, location_label, token_count, embedding, embedding_model_version)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     documentId,
                     userId,
@@ -58,6 +58,7 @@ public class VectorIndexingServiceImpl implements VectorIndexingService {
                     chunk.content(),
                     chunk.pageStart(),
                     chunk.pageEnd(),
+                    chunk.locationLabel(),
                     chunk.tokenCount(),
                     toVector(embeddings.get(i)),
                     modelVersion
@@ -83,7 +84,7 @@ public class VectorIndexingServiceImpl implements VectorIndexingService {
      */
     public List<ChunkSearchResult> searchWithContent(Long userId, Long projectId, float[] queryEmbedding, int limit) {
         String sql = """
-                SELECT dc.id, dc.document_id, dc.content, dc.page_start, dc.page_end,
+                SELECT dc.id, dc.document_id, dc.content, dc.page_start, dc.page_end, dc.location_label,
                        dc.embedding <=> CAST(? AS vector) AS distance,
                        d.filename AS document_filename
                 FROM document_chunks dc
@@ -103,6 +104,7 @@ public class VectorIndexingServiceImpl implements VectorIndexingService {
                         resultSet.getString("content"),
                         resultSet.getInt("page_start"),
                         resultSet.getInt("page_end"),
+                        resultSet.getString("location_label"),
                         resultSet.getDouble("distance")
                 ),
                 // 查询向量同样需转成 pgvector 字面量再绑定

@@ -11,9 +11,11 @@ import {
   X
 } from "lucide-react";
 import { getDocumentContent } from "@/lib/api";
+import { formatDocumentCount } from "@/lib/document-format";
 import type { Conversation, Document, Project, User } from "@/lib/types";
 import LogoMark from "./LogoMark";
 import StatusBadge from "./StatusBadge";
+import DocumentPreview from "@/components/preview/DocumentPreview";
 
 interface ProjectSidebarProps {
   user: User;
@@ -47,15 +49,12 @@ export default function ProjectSidebar({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [preview, setPreview] = useState<{
     document: Document;
-    url: string;
+    blob: Blob;
   } | null>(null);
   const [previewingId, setPreviewingId] = useState<number | null>(null);
   const [previewError, setPreviewError] = useState<string | null>(null);
 
   function closePreview() {
-    if (preview) {
-      URL.revokeObjectURL(preview.url);
-    }
     setPreview(null);
   }
 
@@ -64,7 +63,7 @@ export default function ProjectSidebar({
     setPreviewError(null);
     try {
       const blob = await getDocumentContent(document.id);
-      setPreview({ document, url: URL.createObjectURL(blob) });
+      setPreview({ document, blob });
     } catch (err) {
       setPreviewError(
         err instanceof Error ? err.message : "预览失败，请稍后重试"
@@ -123,7 +122,7 @@ export default function ProjectSidebar({
             <input
               ref={fileInputRef}
               type="file"
-              accept="application/pdf"
+              accept=".pdf,.docx,.xlsx,.txt,.md,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/plain,text/markdown"
               className="hidden"
               onChange={(e) => {
                 const file = e.target.files?.[0];
@@ -161,7 +160,9 @@ export default function ProjectSidebar({
                       {document.filename}
                     </div>
                     <div className="mt-[3px] font-mono text-[0.6rem] text-[rgba(150,185,235,0.4)]">
-                      {document.pageCount ? `${document.pageCount} 页 · ` : ""}
+                      {document.pageCount
+                        ? `${formatDocumentCount(document.fileType, document.pageCount)} · `
+                        : ""}
                       {document.fileSize
                         ? `${(document.fileSize / 1024 / 1024).toFixed(1)} MB`
                         : ""}
@@ -283,11 +284,7 @@ export default function ProjectSidebar({
               <X className="h-4 w-4" />
             </button>
           </div>
-          <iframe
-            title={`${preview.document.filename} 预览`}
-            src={preview.url}
-            className="min-h-0 w-full flex-1 rounded-b-xl border border-[rgba(255,255,255,0.1)] bg-white"
-          />
+          <DocumentPreview document={preview.document} blob={preview.blob} />
         </div>
       )}
     </>

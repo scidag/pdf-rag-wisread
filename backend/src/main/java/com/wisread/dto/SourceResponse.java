@@ -17,6 +17,8 @@ public record SourceResponse(
         int pageStart,
         // 来源结束页码
         int pageEnd,
+        // 定位单位标签，例如“页”“段落”“行”“工作表 Sheet1”
+        String locationLabel,
         // 来源文本片段（摘录内容）
         String snippet
 ) {

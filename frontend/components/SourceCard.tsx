@@ -1,4 +1,5 @@
 import { BookOpen } from "lucide-react";
+import { formatSourceLocation } from "@/lib/document-format";
 import type { Source } from "@/lib/types";
 
 export default function SourceCard({ source }: { source: Source }) {
@@ -13,8 +14,7 @@ export default function SourceCard({ source }: { source: Source }) {
           </span>
         )}
         <span className="text-[rgba(130,185,255,0.6)]">
-          第 {source.pageStart}
-          {source.pageEnd !== source.pageStart ? `-${source.pageEnd}` : ""} 页
+          {formatSourceLocation(source)}
         </span>
       </div>
       <p className="text-[0.7rem] leading-[1.6] text-[rgba(165,195,235,0.6)]">

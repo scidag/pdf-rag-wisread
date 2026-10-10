@@ -18,6 +18,7 @@ export interface Document {
   id: number;
   projectId: number | null;
   filename: string;
+  fileType: string | null;
   fileSize: number | null;
   pageCount: number | null;
   tokenCount: number | null;
@@ -34,6 +35,7 @@ export interface Source {
   filename: string | null;
   pageStart: number;
   pageEnd: number;
+  locationLabel: string | null;
   snippet: string;
 }
 

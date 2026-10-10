@@ -53,6 +53,7 @@ public class CitationParsingServiceImpl implements CitationParsingService {
                         chunk.filename(),
                         chunk.pageStart(),
                         chunk.pageEnd(),
+                        chunk.locationLabel(),
                         // 内容截断为摘要，避免把整段 chunk 塞进引用面板
                         truncate(chunk.content())
                 ));

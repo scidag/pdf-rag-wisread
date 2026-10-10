@@ -31,7 +31,7 @@ class DocumentProcessingServiceTest {
     private DocumentJobRepository documentJobRepository;
 
     @Mock
-    private PdfParsingService pdfParsingService;
+    private DocumentParsingService documentParsingService;
 
     @Mock
     private ChunkingService chunkingService;
@@ -55,7 +55,7 @@ class DocumentProcessingServiceTest {
         service = new DocumentProcessingServiceImpl(
                 documentRepository,
                 documentJobRepository,
-                pdfParsingService,
+                documentParsingService,
                 chunkingService,
                 tokenCounter,
                 embeddingService,

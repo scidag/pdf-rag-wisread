@@ -32,6 +32,8 @@ public class DocumentChunk {
 
     private Integer pageEnd; // 该分块结束页码（含）
 
+    private String locationLabel; // 定位单位标签，例如“页”“段落”“行”“工作表 Sheet1”
+
     private Integer tokenCount; // 该分块的 token 数量
 
     private String embeddingModelVersion; // 生成该分块向量所用的嵌入模型版本
@@ -89,6 +91,14 @@ public class DocumentChunk {
 
     public void setPageEnd(Integer pageEnd) {
         this.pageEnd = pageEnd;
+    }
+
+    public String getLocationLabel() {
+        return locationLabel;
+    }
+
+    public void setLocationLabel(String locationLabel) {
+        this.locationLabel = locationLabel;
     }
 
     public Integer getTokenCount() {

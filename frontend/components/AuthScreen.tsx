@@ -139,7 +139,7 @@ export default function AuthScreen({ initialTab = "signin" }: AuthScreenProps) {
                   margin: 0
                 }}
               >
-                让 PDF 变成
+                让文档变成
                 <br />
                 <span
                   style={{
@@ -161,7 +161,7 @@ export default function AuthScreen({ initialTab = "signin" }: AuthScreenProps) {
                   maxWidth: 380
                 }}
               >
-                上传 PDF，向文档提问，获得带来源溯源的 AI 回答。
+                上传文档，向文档提问，获得带来源溯源的 AI 回答。
                 <br />
                 一个工作区，零门槛。
               </p>

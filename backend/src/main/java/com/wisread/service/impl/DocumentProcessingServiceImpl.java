@@ -4,13 +4,14 @@ import com.wisread.service.DocumentProcessingService;
 import com.wisread.service.ChunkingService;
 import com.wisread.service.EmbeddingService;
 import com.wisread.service.MinioStorageService;
-import com.wisread.service.PdfParsingService;
+import com.wisread.service.DocumentParsingService;
 import com.wisread.service.TokenCounter;
 import com.wisread.service.VectorIndexingService;
 
 import com.wisread.entity.Document;
 import com.wisread.entity.DocumentJob;
 import com.wisread.exception.ApiException;
+import com.wisread.model.DocumentParsingResult;
 import com.wisread.model.PageText;
 import com.wisread.model.TextChunk;
 import com.wisread.repository.DocumentJobRepository;
@@ -33,14 +34,14 @@ import java.util.List;
  * <p>实现要点（@Async 后台执行，端到端数据流）：
  * <ol>
  *   <li>状态置为 PROCESSING/RUNNING，记录开始时间。</li>
- *   <li>从 MinIO 取回 PDF 字节，逐页抽取文本（PdfParsingService）。</li>
+ *   <li>从 MinIO 取回文件字节，按文档类型抽取文本（DocumentParsingService）。</li>
  *   <li>逐页分块（ChunkingService），累加 token 数并做全局上限校验（50 万）。</li>
  *   <li>对全部文本做 embedding，调用 VectorIndexingService 写入 pgvector。</li>
  *   <li>成功后状态机推进到 READY/SUCCEEDED，回写页数、token 数、embedding 模型版本。</li>
  * </ol>
  *
  * <p>失败重试：{@code handleFailure} 在 {@code retryCount < 1} 时清理已写向量、回退状态并重新处理一次；
- * 仍失败则置为 FAILED 并保留错误信息。空/扫描件 PDF 直接以 422 失败。
+ * 仍失败则置为 FAILED 并保留错误信息。无文本/扫描件文档直接以 422 失败。
  */
 @Service
 public class DocumentProcessingServiceImpl implements DocumentProcessingService {
@@ -52,7 +53,7 @@ public class DocumentProcessingServiceImpl implements DocumentProcessingService 
 
     private final DocumentRepository documentRepository;
     private final DocumentJobRepository documentJobRepository;
-    private final PdfParsingService pdfParsingService;
+    private final DocumentParsingService documentParsingService;
     private final ChunkingService chunkingService;
     private final TokenCounter tokenCounter;
     private final EmbeddingService embeddingService;
@@ -66,7 +67,7 @@ public class DocumentProcessingServiceImpl implements DocumentProcessingService 
     public DocumentProcessingServiceImpl(
             DocumentRepository documentRepository,
             DocumentJobRepository documentJobRepository,
-            PdfParsingService pdfParsingService,
+            DocumentParsingService documentParsingService,
             ChunkingService chunkingService,
             TokenCounter tokenCounter,
             EmbeddingService embeddingService,
@@ -76,7 +77,7 @@ public class DocumentProcessingServiceImpl implements DocumentProcessingService 
     ) {
         this.documentRepository = documentRepository;
         this.documentJobRepository = documentJobRepository;
-        this.pdfParsingService = pdfParsingService;
+        this.documentParsingService = documentParsingService;
         this.chunkingService = chunkingService;
         this.tokenCounter = tokenCounter;
         this.embeddingService = embeddingService;
@@ -99,7 +100,7 @@ public class DocumentProcessingServiceImpl implements DocumentProcessingService 
     /**
      * 处理流水线核心。
      *
-     * <p>依次完成：状态推进 → MinIO 取 PDF → 逐页抽取 → 逐页分块并累计 token →
+     * <p>依次完成：状态推进 → MinIO 取文件 → 解析定位片段 → 分块并累计 token →
      * token 上限校验 → 批量 embedding → 写入 pgvector → 状态推进到 READY。
      */
     private void processInternal(Long documentId, Long userId) {
@@ -127,13 +128,14 @@ public class DocumentProcessingServiceImpl implements DocumentProcessingService 
         try {
             // 幂等：重新处理前清理旧向量，避免部分失败后残留脏数据
             vectorIndexingService.deleteByDocumentId(documentId);
-            // 从对象存储取回 PDF 原始字节
-            byte[] pdfBytes = minioStorageService.getObject(document.getFileKey());
-            // 逐页抽取文本
-            List<PageText> pages = pdfParsingService.extractPages(pdfBytes);
-            // 所有页均为空文本，视为扫描件/空 PDF，直接失败
+            // 从对象存储取回原始字节
+            byte[] fileBytes = minioStorageService.getObject(document.getFileKey());
+            // 按文档类型抽取定位片段
+            DocumentParsingResult parsingResult = documentParsingService.parse(fileBytes, document.getFileType());
+            List<PageText> pages = parsingResult.segments();
+            // 所有定位片段均为空文本，视为扫描件/空文档，直接失败
             if (pages.stream().allMatch(page -> page.text().isBlank())) {
-                throw new ApiException(HttpStatus.UNPROCESSABLE_ENTITY, "scanned or empty PDF is not supported");
+                throw new ApiException(HttpStatus.UNPROCESSABLE_ENTITY, "scanned or empty document is not supported");
             }
 
             // 逐页分块，使用 nextChunkIndex 维持全局块序号连续
@@ -157,7 +159,7 @@ public class DocumentProcessingServiceImpl implements DocumentProcessingService 
             vectorIndexingService.saveChunks(documentId, userId, chunks, embeddings, embeddingModelVersion);
 
             // 处理成功：回写元信息并推进状态机到 READY/SUCCEEDED
-            document.setPageCount(pages.size());
+            document.setPageCount(parsingResult.locationCount());
             document.setTokenCount(totalTokens);
             document.setEmbeddingModelVersion(embeddingModelVersion);
             document.setStatus("READY");
@@ -243,4 +245,4 @@ public class DocumentProcessingServiceImpl implements DocumentProcessingService 
                     .ifPresent(document -> processInternal(document.getId(), document.getUserId()));
         }
     }
-}
+}

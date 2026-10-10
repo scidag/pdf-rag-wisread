@@ -162,7 +162,7 @@ export default function ProjectsPage() {
               </div>
               <h2 className="font-serif text-base font-bold">还没有项目</h2>
               <p className="mt-2 max-w-[380px] text-[0.78rem] leading-[1.7] text-[rgba(160,190,230,0.45)]">
-                新建一个项目，上传 PDF 文档，开始向文档提问。
+                新建一个项目，上传文档，开始向文档提问。
               </p>
             </div>
           ) : (

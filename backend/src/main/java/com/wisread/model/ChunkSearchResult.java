@@ -12,6 +12,21 @@ public record ChunkSearchResult(
         String content, // 命中分块的原文内容，用于拼接大模型上下文
         int pageStart, // 命中分块起始页码（含）
         int pageEnd, // 命中分块结束页码（含）
+        String locationLabel, // 定位单位标签，例如“页”“段落”“行”“工作表 Sheet1”
         double distance // 向量距离（越小表示越相似），用于衡量相关度
 ) {
+    /**
+     * 兼容旧的“页码”构造方式，默认定位单位是“页”。
+     */
+    public ChunkSearchResult(
+            Long chunkId,
+            Long documentId,
+            String filename,
+            String content,
+            int pageStart,
+            int pageEnd,
+            double distance
+    ) {
+        this(chunkId, documentId, filename, content, pageStart, pageEnd, "页", distance);
+    }
 }

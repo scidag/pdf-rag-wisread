@@ -6,7 +6,7 @@ import com.wisread.entity.DocumentJob;
 /**
  * 文档处理服务接口（DocumentProcessingService）。
  *
- * <p>负责“智阅”RAG 知识入库的核心异步流水线：把 MinIO 中的 PDF 解析为文本、
+ * <p>负责“智阅”RAG 知识入库的核心异步流水线：把 MinIO 中的文档解析为文本、
  * 分块、向量化并写入 pgvector，同时维护 {@code Document} 与 {@code DocumentJob} 的状态机。
  *
  * <p>状态机：{@code UPLOADED} → {@code PROCESSING}（任务 {@code RUNNING}）→

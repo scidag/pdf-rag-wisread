@@ -29,6 +29,8 @@ public class Document {
 
     private Long fileSize; // 文件大小，单位字节
 
+    private String fileType; // 文档类型标识，如 pdf/docx/xlsx/txt/md；老数据可为空
+
     private Integer pageCount; // 文档总页数，解析后填充
 
     private Integer tokenCount; // 文档折算的 token 总数，用于计量与成本估算
@@ -89,6 +91,14 @@ public class Document {
 
     public void setFileSize(Long fileSize) {
         this.fileSize = fileSize;
+    }
+
+    public String getFileType() {
+        return fileType;
+    }
+
+    public void setFileType(String fileType) {
+        this.fileType = fileType;
     }
 
     public Integer getPageCount() {

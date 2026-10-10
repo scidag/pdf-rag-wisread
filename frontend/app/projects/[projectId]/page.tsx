@@ -20,6 +20,7 @@ import {
   uploadDocument
 } from "@/lib/api";
 import { streamChat } from "@/lib/sse";
+import { isSupportedDocumentFilename } from "@/lib/document-format";
 import type {
   Conversation,
   Document,
@@ -134,8 +135,8 @@ export default function ProjectDetailPage() {
 
   async function handleUpload(file: File) {
     // 客户端先行校验，避免大文件上传触发连接中断（ERR_CONNECTION_RESET）
-    if (!/\.pdf$/i.test(file.name)) {
-      setUploadError("只支持 PDF 文件");
+    if (!isSupportedDocumentFilename(file.name)) {
+      setUploadError("只支持 PDF、DOCX、XLSX、TXT、MD 文件");
       return;
     }
     if (file.size > MAX_FILE_SIZE) {

@@ -163,6 +163,7 @@ public class ConversationServiceImpl implements ConversationService {
                         filename,
                         chunk.getPageStart(),
                         chunk.getPageEnd(),
+                        chunk.getLocationLabel(),
                         truncate(chunk.getContent())
                 ));
             }

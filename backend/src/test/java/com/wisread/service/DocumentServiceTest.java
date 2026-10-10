@@ -21,8 +21,10 @@ import java.util.Optional;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import org.mockito.ArgumentCaptor;
 
 @ExtendWith(MockitoExtension.class)
 class DocumentServiceTest {
@@ -66,13 +68,48 @@ class DocumentServiceTest {
     }
 
     @Test
-    void uploadRejectsNonPdf() {
+    void uploadRejectsUnsupportedType() {
         mockProjectOwned();
+        MockMultipartFile file = new MockMultipartFile(
+                "file",
+                "archive.zip",
+                "application/zip",
+                "hello".getBytes()
+        );
+
+        assertThatThrownBy(() -> documentService.upload(USER_ID, PROJECT_ID, file))
+                .isInstanceOf(ApiException.class)
+                .extracting("status")
+                .isEqualTo(HttpStatus.UNSUPPORTED_MEDIA_TYPE);
+    }
+
+    @Test
+    void uploadAcceptsPlainTextAndPersistsFileType() {
+        mockProjectOwned();
+        when(documentRepository.countByProjectId(PROJECT_ID)).thenReturn(0L);
         MockMultipartFile file = new MockMultipartFile(
                 "file",
                 "notes.txt",
                 "text/plain",
-                "hello".getBytes()
+                "智阅支持 TXT".getBytes()
+        );
+
+        documentService.upload(USER_ID, PROJECT_ID, file);
+
+        ArgumentCaptor<Document> documentCaptor = ArgumentCaptor.forClass(Document.class);
+        verify(documentRepository).insert(documentCaptor.capture());
+        assertThat(documentCaptor.getValue().getFileType()).isEqualTo("txt");
+        verify(minioStorageService).putObject(any(), any(byte[].class), eq("text/plain"));
+    }
+
+    @Test
+    void uploadRejectsMismatchedDocxMagic() {
+        mockProjectOwned();
+        MockMultipartFile file = new MockMultipartFile(
+                "file",
+                "notes.docx",
+                "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                "not a real docx".getBytes()
         );
 
         assertThatThrownBy(() -> documentService.upload(USER_ID, PROJECT_ID, file))
