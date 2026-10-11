@@ -15,7 +15,6 @@ import { formatDocumentCount } from "@/lib/document-format";
 import type { Conversation, Document, Project, User } from "@/lib/types";
 import LogoMark from "./LogoMark";
 import StatusBadge from "./StatusBadge";
-import DocumentPreview from "@/components/preview/DocumentPreview";
 
 interface ProjectSidebarProps {
   user: User;
@@ -49,12 +48,15 @@ export default function ProjectSidebar({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [preview, setPreview] = useState<{
     document: Document;
-    blob: Blob;
+    url: string;
   } | null>(null);
   const [previewingId, setPreviewingId] = useState<number | null>(null);
   const [previewError, setPreviewError] = useState<string | null>(null);
 
   function closePreview() {
+    if (preview) {
+      URL.revokeObjectURL(preview.url);
+    }
     setPreview(null);
   }
 
@@ -63,7 +65,7 @@ export default function ProjectSidebar({
     setPreviewError(null);
     try {
       const blob = await getDocumentContent(document.id);
-      setPreview({ document, blob });
+      setPreview({ document, url: URL.createObjectURL(blob) });
     } catch (err) {
       setPreviewError(
         err instanceof Error ? err.message : "预览失败，请稍后重试"
@@ -284,7 +286,11 @@ export default function ProjectSidebar({
               <X className="h-4 w-4" />
             </button>
           </div>
-          <DocumentPreview document={preview.document} blob={preview.blob} />
+          <iframe
+            title={`${preview.document.filename} 预览`}
+            src={preview.url}
+            className="min-h-0 w-full flex-1 rounded-b-xl border border-[rgba(255,255,255,0.1)] bg-white"
+          />
         </div>
       )}
     </>

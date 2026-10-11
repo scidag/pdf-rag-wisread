@@ -1,22 +1,23 @@
 # 智阅 Wisread
 
-基于私有知识库的 PDF 智能阅读与问答助手。上传 PDF 后，系统完成文本解析、向量化索引，并支持基于原文的多轮问答与引用溯源。
+基于私有知识库的多格式文档智能阅读与问答助手。上传 PDF、DOCX、XLSX、TXT、MD 后，系统完成文本解析、向量化索引，并支持基于原文的多轮问答与引用溯源。
 
 ## 功能
 
 - 邮箱 + 密码注册登录，JWT access token + refresh token
-- PDF 上传、格式/大小校验、异步解析与索引
-- 文档列表、处理状态、删除、单用户 5 个文档限制
-- 单文档多会话、多轮问答
+- 项目（Project）管理：创建/编辑/删除项目，项目级隔离
+- PDF/DOCX/XLSX/TXT/MD 上传、格式/大小校验、异步解析与索引，每项目 5 个文档限制
+- 项目级会话：一个会话跨项目内全部已就绪文档检索，多轮问答
 - RAG 检索 + Rerank + SSE 流式回答
-- 引用来源展示（编号、页码、原文片段）
+- 引用来源展示（文档名、编号、页码、原文片段）
+- 多轮对话记忆：会话热窗口（Spring AI ChatMemory + Redis）与用户长期记忆（pgvector 语义检索，自动注入与异步沉淀）
 - MinIO 文件存储，PostgreSQL + pgvector 向量检索
 
 ## 技术栈
 
-- 后端：Java 21、Spring Boot 3.4.5、Spring AI Alibaba、Spring Security、Flyway
+- 后端：Java 21、Spring Boot 3.4.5、Spring AI Alibaba、Spring Security、Flyway、PDFBox、Apache POI
 - 前端：Next.js 15、React 19、TypeScript、Tailwind CSS
-- 基础设施：PostgreSQL 16 + pgvector、MinIO、Docker Compose
+- 基础设施：PostgreSQL 16 + pgvector、Redis、MinIO、Docker Compose
 
 ## 目录结构
 
@@ -46,6 +47,7 @@ docker compose -f deploy/docker-compose.yml --env-file deploy/.env.example up -d
 
 ```bash
 cd backend
+chcp 65001   # Windows 控制台按 UTF-8 显示日志，避免中文乱码
 mvn spring-boot:run
 ```
 
@@ -82,12 +84,13 @@ export WISREAD_CHAT_MOCK_ENABLED=false
 - `POST /auth/refresh`
 - `POST /auth/logout`
 - `GET /users/me`
-- `POST /documents`
-- `GET /documents`
+- `POST /projects`、`GET /projects`、`GET /projects/{id}`、`PATCH /projects/{id}`、`DELETE /projects/{id}`
+- `POST /documents?projectId={id}`
+- `GET /documents?projectId={id}`
 - `GET /documents/{id}/status`
 - `DELETE /documents/{id}`
-- `POST /conversations`
-- `GET /conversations?documentId={id}`
+- `POST /conversations`（body：`{projectId, title?}`）
+- `GET /conversations?projectId={id}`
 - `GET /conversations/{id}/messages`
 - `POST /conversations/{id}/messages`（SSE）
 
