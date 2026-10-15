@@ -141,10 +141,25 @@ export function deleteDocument(documentId: number) {
 
 /* ---------- Conversation ---------- */
 
-export function createConversation(projectId: number, title?: string) {
+export function createConversation(
+  projectId: number,
+  title?: string,
+  knowledgeBaseId?: number | null
+) {
   return apiFetch<Conversation>("/conversations", {
     method: "POST",
-    body: JSON.stringify({ projectId, title })
+    body: JSON.stringify({ projectId, title, knowledgeBaseId })
+  });
+}
+
+// 切换/解绑会话绑定的知识库；knowledgeBaseId 传 null 表示解绑
+export function updateConversation(
+  conversationId: number,
+  data: { knowledgeBaseId?: number | null }
+) {
+  return apiFetch<Conversation>(`/conversations/${conversationId}`, {
+    method: "PATCH",
+    body: JSON.stringify(data)
   });
 }
 

@@ -4,6 +4,8 @@ import com.wisread.service.ChatService;
 import com.wisread.service.ChatLogService;
 import com.wisread.service.CitationParsingService;
 import com.wisread.service.EmbeddingService;
+import com.wisread.service.KnowledgeBaseService;
+import com.wisread.service.KnowledgeVectorIndexingService;
 import com.wisread.service.QueryRewriteService;
 import com.wisread.service.RerankService;
 import com.wisread.service.TokenCounter;
@@ -17,9 +19,11 @@ import com.wisread.dto.SourceResponse;
 import com.wisread.entity.AnswerSource;
 import com.wisread.entity.Conversation;
 import com.wisread.entity.Document;
+import com.wisread.entity.KnowledgeBase;
 import com.wisread.entity.UserMemory;
 import com.wisread.exception.ApiException;
 import com.wisread.model.ChunkSearchResult;
+import com.wisread.model.KnowledgeChunkSearchResult;
 import com.wisread.repository.AnswerSourceRepository;
 import com.wisread.repository.ConversationRepository;
 import com.wisread.repository.DocumentRepository;
@@ -91,6 +95,8 @@ public class ChatServiceImpl implements ChatService {
     private final AnswerSourceRepository answerSourceRepository;
     private final EmbeddingService embeddingService;
     private final VectorIndexingService vectorIndexingService;
+    private final KnowledgeBaseService knowledgeBaseService;
+    private final KnowledgeVectorIndexingService knowledgeVectorIndexingService;
     private final RerankService rerankService;
     private final QueryRewriteService queryRewriteService;
     private final CitationParsingService citationParsingService;
@@ -123,6 +129,8 @@ public class ChatServiceImpl implements ChatService {
             AnswerSourceRepository answerSourceRepository,
             EmbeddingService embeddingService,
             VectorIndexingService vectorIndexingService,
+            KnowledgeBaseService knowledgeBaseService,
+            KnowledgeVectorIndexingService knowledgeVectorIndexingService,
             RerankService rerankService,
             QueryRewriteService queryRewriteService,
             CitationParsingService citationParsingService,
@@ -150,6 +158,8 @@ public class ChatServiceImpl implements ChatService {
         this.answerSourceRepository = answerSourceRepository;
         this.embeddingService = embeddingService;
         this.vectorIndexingService = vectorIndexingService;
+        this.knowledgeBaseService = knowledgeBaseService;
+        this.knowledgeVectorIndexingService = knowledgeVectorIndexingService;
         this.rerankService = rerankService;
         this.queryRewriteService = queryRewriteService;
         this.citationParsingService = citationParsingService;
@@ -245,13 +255,22 @@ public class ChatServiceImpl implements ChatService {
             String query = queryRewriteService.rewrite(request.content(), history, conversation.getUserId());
             // 对 query 做 embedding，作为向量检索的输入
             float[] queryEmbedding = embeddingService.embed(List.of(query), conversation.getUserId()).get(0);
-            // 向量召回 Top10 候选块：先广召回，再靠重排/阈值精筛，平衡召回率与精度
-            List<ChunkSearchResult> candidates = vectorIndexingService.searchWithContent(
-                    conversation.getUserId(),
-                    projectId,
-                    queryEmbedding,
-                    topK
-            );
+            // 检索双链路：会话绑定了独立知识库时走知识库检索（归属校验 + 阈值过滤 + rerank 截断），
+            // 未绑定时保持原有项目检索链路（向量召回 Top10 → 重排）不变
+            List<ChunkSearchResult> chunks;
+            if (conversation.getKnowledgeBaseId() != null) {
+                chunks = searchFromKnowledgeBase(conversation, queryEmbedding);
+            } else {
+                // 向量召回 Top10 候选块：先广召回，再靠重排/阈值精筛，平衡召回率与精度
+                List<ChunkSearchResult> candidates = vectorIndexingService.searchWithContent(
+                        conversation.getUserId(),
+                        projectId,
+                        queryEmbedding,
+                        topK
+                );
+                // 重排（当前实现仅截前 3，见 RerankServiceImpl）
+                chunks = rerankService.rerank(query, candidates);
+            }
             // L2 长期记忆检索：复用同一 query 向量（一次 Embedding 两处复用），按用户强隔离；
             // 总开关关闭时旁路（零开销），命中则计数供监控区分注入效果
             List<UserMemory> memories = memoryEnabled
@@ -260,16 +279,16 @@ public class ChatServiceImpl implements ChatService {
             if (!memories.isEmpty()) {
                 memoryInjectHits.increment();
             }
-            // 重排（当前实现仅截前 3，见 RerankServiceImpl）
-            List<ChunkSearchResult> chunks = rerankService.rerank(query, candidates);
             // 记录本次提问：问题、模型、检索内容与来源文档
             chatLogService.log(conversation.getUserId(), request.content(), chatModelName, chunks);
             log.info("Chat query='{}' candidates={}", query,
                     chunks.stream().map(ChunkSearchResult::distance).toList());
 
-            // 距离阈值拒答：最优候选距离过大（>0.65）说明文档中没有可靠依据，
+            // 距离阈值拒答：未绑库沿用固定 0.65 距离阈值（>0.65 说明项目文档无可靠依据）；
+            // 绑库分支的阈值已由知识库配置的相似度阈值在检索时过滤，空列表即代表无可靠依据，
             // 直接返回固定文案，防止大模型在无依据时幻觉编造
-            if (chunks.isEmpty() || chunks.get(0).distance() > DISTANCE_THRESHOLD) {
+            if (chunks.isEmpty()
+                    || (conversation.getKnowledgeBaseId() == null && chunks.get(0).distance() > DISTANCE_THRESHOLD)) {
                 sendNoAnswer(conversation, request.content(), emitter);
                 return;
             }
@@ -356,6 +375,30 @@ public class ChatServiceImpl implements ChatService {
      */
     private void completeEmitterWithError(SseEmitter emitter, Throwable exception) {
         completeEmitterWithError(emitter, null, exception);
+    }
+
+    /**
+     * 知识库检索链路：会话绑定了独立知识库时的候选块获取。
+     *
+     * <p>做什么：先经 {@code findOwnedKnowledgeBase} 做归属校验（越权/不存在 403，
+     * ARCHIVED 归档库放行不拦，既有绑定会话可继续问答）；再按知识库配置的 topK 召回，
+     * 用配置的相似度阈值过滤（余弦距离 = 1 - 余弦相似度，distance &gt; 1 - threshold 丢弃）；
+     * rerank 开启时按 rerankK 截断（当前 rerank 为占位实现，不重排仅截断）。
+     * 过滤/截断口径统一收敛在 {@link KnowledgeRetrievalPipeline}，与 RAG 检索测试端点共用，防止口径漂移。
+     * 为什么：知识库自带检索配置（topK/相似度阈值/重排开关），问答行为由库配置驱动，
+     * 不再叠加项目链路的固定 0.65 距离阈值。
+     */
+    private List<ChunkSearchResult> searchFromKnowledgeBase(Conversation conversation, float[] queryEmbedding) {
+        Long userId = conversation.getUserId();
+        Long knowledgeBaseId = conversation.getKnowledgeBaseId();
+        KnowledgeBase knowledgeBase = knowledgeBaseService.findOwnedKnowledgeBase(userId, knowledgeBaseId);
+        List<KnowledgeChunkSearchResult> hits = knowledgeVectorIndexingService.searchKnowledgeChunks(
+                userId,
+                knowledgeBaseId,
+                queryEmbedding,
+                KnowledgeRetrievalPipeline.resolveTopK(knowledgeBase, topK)
+        );
+        return KnowledgeRetrievalPipeline.filterAndTruncate(hits, knowledgeBase);
     }
 
     /**

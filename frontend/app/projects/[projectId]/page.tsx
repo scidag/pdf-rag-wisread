@@ -17,6 +17,7 @@ import {
   listConversations,
   listDocuments,
   listMessages,
+  updateConversation,
   uploadDocument
 } from "@/lib/api";
 import { streamChat } from "@/lib/sse";
@@ -51,6 +52,10 @@ export default function ProjectDetailPage() {
   const [streamingContent, setStreamingContent] = useState("");
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
+  // 尚无会话时选库器记录的暂选知识库，新建会话时随请求携带
+  const [pendingKnowledgeBaseId, setPendingKnowledgeBaseId] = useState<
+    number | null
+  >(null);
 
   const loadProject = useCallback(async () => {
     const p = await getProject(projectId);
@@ -163,7 +168,15 @@ export default function ProjectDetailPage() {
   }
 
   async function handleCreateConversation() {
-    const conversation = await createConversation(projectId);
+    // 新建会话携带知识库：优先继承当前会话绑定；尚无会话时携带创建前的暂选
+    const knowledgeBaseId =
+      selectedConversation?.knowledgeBaseId ?? pendingKnowledgeBaseId;
+    const conversation = await createConversation(
+      projectId,
+      undefined,
+      knowledgeBaseId
+    );
+    setPendingKnowledgeBaseId(null);
     setConversations((current) => [conversation, ...current]);
     setSelectedConversation(conversation);
     setMessages([]);
@@ -171,8 +184,24 @@ export default function ProjectDetailPage() {
     await loadProject();
   }
 
+  async function handleChangeKnowledgeBase(knowledgeBaseId: number | null) {
+    if (!selectedConversation) {
+      // 尚无会话：仅记录暂选，不调接口
+      setPendingKnowledgeBaseId(knowledgeBaseId);
+      return;
+    }
+    const updated = await updateConversation(selectedConversation.id, {
+      knowledgeBaseId
+    });
+    setSelectedConversation(updated);
+    setConversations((current) =>
+      current.map((item) => (item.id === updated.id ? updated : item))
+    );
+  }
+
   async function handleSelectConversation(conversation: Conversation) {
     setSelectedConversation(conversation);
+    setPendingKnowledgeBaseId(null);
     setMessages([]);
     router.replace(`/projects/${projectId}?conv=${conversation.id}`);
     const items = await listMessages(conversation.id);
@@ -311,6 +340,10 @@ export default function ProjectDetailPage() {
           streamingContent={streamingContent}
           onSend={handleSend}
           hasConversation={!!selectedConversation}
+          knowledgeBaseId={
+            selectedConversation?.knowledgeBaseId ?? pendingKnowledgeBaseId
+          }
+          onChangeKnowledgeBase={handleChangeKnowledgeBase}
         />
       </section>
     </main>

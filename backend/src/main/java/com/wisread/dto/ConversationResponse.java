@@ -11,6 +11,8 @@ public record ConversationResponse(
         Long id,
         // 会话所属的项目 ID
         Long projectId,
+        // 会话绑定的独立知识库 ID（未绑定为 null，问答走项目检索）
+        Long knowledgeBaseId,
         // 会话标题
         String title,
         // 会话创建时间

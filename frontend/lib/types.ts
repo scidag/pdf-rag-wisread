@@ -42,6 +42,8 @@ export interface Source {
 export interface Conversation {
   id: number;
   projectId: number;
+  // 会话绑定的独立知识库 ID（未绑定为 null，问答走项目检索）
+  knowledgeBaseId: number | null;
   title: string;
   createdAt: string;
   updatedAt: string;

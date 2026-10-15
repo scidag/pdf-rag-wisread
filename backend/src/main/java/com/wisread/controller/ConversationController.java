@@ -4,6 +4,7 @@ import com.wisread.dto.ChatRequest;
 import com.wisread.dto.ConversationResponse;
 import com.wisread.dto.CreateConversationRequest;
 import com.wisread.dto.MessageResponse;
+import com.wisread.dto.UpdateConversationRequest;
 import com.wisread.service.ChatService;
 import com.wisread.service.ConversationService;
 import jakarta.validation.Valid;
@@ -12,6 +13,7 @@ import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -65,6 +67,21 @@ public class ConversationController {
     ) {
         Long userId = (Long) authentication.getPrincipal();
         return ResponseEntity.ok(conversationService.list(userId, projectId));
+    }
+
+    /** PATCH /api/v1/conversations/{conversationId}：切换会话绑定的独立知识库（当前仅支持选库维度）。
+     * 入参：路径变量 conversationId（会话 ID），请求体 UpdateConversationRequest（knowledgeBaseId
+     * 非空表示绑定该知识库，null 表示解绑恢复项目检索），当前登录用户由 Authentication 解析得到。
+     * 业务含义：非空时校验知识库归属（越权 403）与软删除状态（已删除 404），ARCHIVED 允许绑定。
+     * 返回：200 OK 及更新后的会话信息（ConversationResponse）。 */
+    @PatchMapping("/{conversationId}")
+    public ResponseEntity<ConversationResponse> updateKnowledgeBase(
+            @PathVariable Long conversationId,
+            @RequestBody UpdateConversationRequest request,
+            Authentication authentication
+    ) {
+        Long userId = (Long) authentication.getPrincipal();
+        return ResponseEntity.ok(conversationService.updateKnowledgeBase(userId, conversationId, request.knowledgeBaseId()));
     }
 
     /** GET /api/v1/conversations/{conversationId}/messages：获取某会话的历史消息列表。

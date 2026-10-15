@@ -51,4 +51,18 @@ public interface ConversationService {
      * @return 校验通过的会话实体
      */
     Conversation findOwnedConversation(Long userId, Long conversationId);
+
+    /**
+     * 切换会话绑定的独立知识库（当前仅支持选库维度）。
+     *
+     * <p>做什么：先校验会话归属当前用户；knowledgeBaseId 非空时校验知识库归属
+     * （越权 403）且未被软删除（已删除 404），ARCHIVED 知识库允许绑定；
+     * knowledgeBaseId 为 null 表示解绑，问答恢复项目检索链路。
+     *
+     * @param userId          当前用户 ID
+     * @param conversationId  会话 ID
+     * @param knowledgeBaseId 目标知识库 ID；null 表示解绑
+     * @return 更新后的会话响应
+     */
+    ConversationResponse updateKnowledgeBase(Long userId, Long conversationId, Long knowledgeBaseId);
 }

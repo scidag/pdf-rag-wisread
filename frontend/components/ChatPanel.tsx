@@ -4,6 +4,7 @@ import { useState } from "react";
 import { Loader2, Send, Sparkles } from "lucide-react";
 import type { Message } from "@/lib/types";
 import SourceCard from "./SourceCard";
+import KnowledgeBaseSelector from "./KnowledgeBaseSelector";
 
 interface ChatPanelProps {
   messages: Message[];
@@ -11,6 +12,10 @@ interface ChatPanelProps {
   streamingContent: string;
   onSend: (content: string) => Promise<void>;
   hasConversation: boolean;
+  /** 当前会话绑定的知识库 ID；尚无会话时为新建会话前的暂选值（未绑定为 null） */
+  knowledgeBaseId: number | null;
+  /** 切换/解绑会话知识库；尚无会话时由父级记录为暂选，失败时抛错由选库器展示 */
+  onChangeKnowledgeBase: (knowledgeBaseId: number | null) => Promise<void>;
 }
 
 export default function ChatPanel({
@@ -18,7 +23,9 @@ export default function ChatPanel({
   streaming,
   streamingContent,
   onSend,
-  hasConversation
+  hasConversation,
+  knowledgeBaseId,
+  onChangeKnowledgeBase
 }: ChatPanelProps) {
   const [content, setContent] = useState("");
 
@@ -46,6 +53,13 @@ export default function ChatPanel({
 
   return (
     <section className="flex h-full min-h-0 flex-1 flex-col bg-[rgba(4,8,16,0.18)]">
+      <div className="flex min-h-[46px] items-center border-b border-border bg-[rgba(6,12,26,0.55)] px-[clamp(16px,3vw,36px)] py-[6px] backdrop-blur-xl">
+        <KnowledgeBaseSelector
+          knowledgeBaseId={knowledgeBaseId}
+          pending={!hasConversation}
+          onChange={onChangeKnowledgeBase}
+        />
+      </div>
       <div className="flex flex-1 flex-col gap-[18px] overflow-y-auto px-[clamp(16px,3vw,36px)] py-6">
         {!hasConversation && (
           <div className="flex flex-1 items-center justify-center">

@@ -25,6 +25,8 @@ public class Conversation {
 
     private Long documentId; // 关联文档ID（documents.id），本会话针对的具体文档，可为空
 
+    private Long knowledgeBaseId; // 绑定的独立知识库ID（knowledge_bases.id），非空时问答走知识库检索链路，可为空
+
     private String title; // 会话标题，通常取首条用户问题或文档名
 
     @TableField(fill = FieldFill.INSERT)
@@ -59,6 +61,14 @@ public class Conversation {
 
     public void setDocumentId(Long documentId) {
         this.documentId = documentId;
+    }
+
+    public Long getKnowledgeBaseId() {
+        return knowledgeBaseId;
+    }
+
+    public void setKnowledgeBaseId(Long knowledgeBaseId) {
+        this.knowledgeBaseId = knowledgeBaseId;
     }
 
     public String getTitle() {

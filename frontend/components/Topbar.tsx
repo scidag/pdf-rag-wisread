@@ -1,13 +1,13 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { Bell, Home, LayoutGrid, LogOut, Plus } from "lucide-react";
+import { Bell, Home, LayoutGrid, Library, LogOut, Plus } from "lucide-react";
 import type { User } from "@/lib/types";
 import LogoMark from "./LogoMark";
 
 interface TopbarProps {
   user: User;
-  activeNav?: "home" | "projects";
+  activeNav?: "home" | "projects" | "knowledge";
   onLogout?: () => void;
   onNewProject?: () => void;
   primaryLabel?: string;
@@ -68,6 +68,14 @@ export default function Topbar({
         >
           <LayoutGrid className="h-3.5 w-3.5" />
           <span className="hidden md:inline">项目</span>
+        </button>
+        <button
+          type="button"
+          onClick={() => router.push("/knowledge-bases")}
+          className={navItemCls(activeNav === "knowledge")}
+        >
+          <Library className="h-3.5 w-3.5" />
+          <span className="hidden md:inline">知识库</span>
         </button>
       </div>
 

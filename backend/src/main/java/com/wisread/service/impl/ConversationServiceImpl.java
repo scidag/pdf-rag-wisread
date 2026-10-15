@@ -10,19 +10,25 @@ import com.wisread.entity.AnswerSource;
 import com.wisread.entity.Conversation;
 import com.wisread.entity.Document;
 import com.wisread.entity.DocumentChunk;
+import com.wisread.entity.KnowledgeBase;
 import com.wisread.entity.Message;
 import com.wisread.entity.Project;
 import com.wisread.exception.ApiException;
+import com.wisread.model.KnowledgeChunkSourceView;
 import com.wisread.repository.AnswerSourceRepository;
 import com.wisread.repository.ConversationRepository;
 import com.wisread.repository.DocumentChunkRepository;
 import com.wisread.repository.DocumentRepository;
+import com.wisread.repository.KnowledgeBaseRepository;
 import com.wisread.repository.MessageRepository;
 import com.wisread.repository.ProjectRepository;
+import com.wisread.service.KnowledgeVectorIndexingService;
+import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -48,6 +54,8 @@ public class ConversationServiceImpl implements ConversationService {
     private final MessageRepository messageRepository;
     private final AnswerSourceRepository answerSourceRepository;
     private final DocumentChunkRepository documentChunkRepository;
+    private final KnowledgeBaseRepository knowledgeBaseRepository;
+    private final KnowledgeVectorIndexingService knowledgeVectorIndexingService;
 
     public ConversationServiceImpl(
             ConversationRepository conversationRepository,
@@ -55,7 +63,9 @@ public class ConversationServiceImpl implements ConversationService {
             DocumentRepository documentRepository,
             MessageRepository messageRepository,
             AnswerSourceRepository answerSourceRepository,
-            DocumentChunkRepository documentChunkRepository
+            DocumentChunkRepository documentChunkRepository,
+            KnowledgeBaseRepository knowledgeBaseRepository,
+            KnowledgeVectorIndexingService knowledgeVectorIndexingService
     ) {
         this.conversationRepository = conversationRepository;
         this.projectRepository = projectRepository;
@@ -63,6 +73,8 @@ public class ConversationServiceImpl implements ConversationService {
         this.messageRepository = messageRepository;
         this.answerSourceRepository = answerSourceRepository;
         this.documentChunkRepository = documentChunkRepository;
+        this.knowledgeBaseRepository = knowledgeBaseRepository;
+        this.knowledgeVectorIndexingService = knowledgeVectorIndexingService;
     }
 
     /**
@@ -70,15 +82,21 @@ public class ConversationServiceImpl implements ConversationService {
      *
      * <p>做什么：校验项目归属后，新建一条会话记录；标题为空时默认“新会话”。
      * 为什么：会话必须挂载在项目下，以便后续 RAG 检索限定在项目的文档范围内。
+     * 请求可选携带 knowledgeBaseId 绑定独立知识库：传了就校验归属（越权 403），
+     * 不传/传 null 时行为与历史版本完全一致（不查知识库）。
      */
     @Transactional
     public ConversationResponse create(Long userId, CreateConversationRequest request) {
         Project project = projectRepository.findByUserIdAndIdAndDeletedAtIsNull(userId, request.projectId())
                 .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "project not found"));
+        if (request.knowledgeBaseId() != null) {
+            requireBindableKnowledgeBase(userId, request.knowledgeBaseId());
+        }
 
         Conversation conversation = new Conversation();
         conversation.setUserId(userId);
         conversation.setProjectId(project.getId());
+        conversation.setKnowledgeBaseId(request.knowledgeBaseId());
         // 标题缺省值，保证前端列表有可读名称
         conversation.setTitle(request.title() == null || request.title().isBlank()
                 ? "新会话"
@@ -105,15 +123,18 @@ public class ConversationServiceImpl implements ConversationService {
      *
      * <p>为什么：逐消息组装 {@link MessageResponse}，对助手消息额外回溯引用来源，
      * 使用 documentNameCache 缓存“文档ID→文件名”，避免同一文档被反复查库。
+     * 引用解析双链路：会话绑定了独立知识库时，AnswerSource.chunkId 指向 knowledge_chunks，
+     * 走知识库切片查询（user_id 校验归属）；未绑定时保持原有 document_chunks 解析路径不变。
      */
     @Transactional(readOnly = true)
     public List<MessageResponse> messages(Long userId, Long conversationId) {
         Conversation conversation = findOwnedConversation(userId, conversationId);
         List<Message> messages = messageRepository.findByConversationIdOrderByCreatedAtAsc(conversation.getId());
         Map<Long, String> documentNameCache = new HashMap<>();
+        boolean knowledgeBaseBound = conversation.getKnowledgeBaseId() != null;
         List<MessageResponse> result = new ArrayList<>();
         for (Message message : messages) {
-            result.add(toResponse(message, documentNameCache));
+            result.add(toResponse(message, userId, knowledgeBaseBound, documentNameCache));
         }
         return result;
     }
@@ -134,38 +155,69 @@ public class ConversationServiceImpl implements ConversationService {
     }
 
     /**
-     * 将消息实体转为响应，并为助手消息拼装引用来源列表。
+     * 切换会话绑定的独立知识库。
+     *
+     * <p>做什么：先做会话归属校验（对齐现有 404 约定）；knowledgeBaseId 非空时校验
+     * 知识库归属与软删除状态；随后写回 knowledge_base_id。
+     * 为什么用条件 UPDATE 而非 updateById：解绑时需把列显式置 NULL，
+     * 而 updateById 默认忽略实体中的 null 字段，无法完成解绑。
+     * 为什么用字符串列名而非 Lambda：UpdateWrapper 的字符串列名不依赖
+     * TableInfo 的 lambda 缓存，列名与 V9 迁移中的 conversations 表结构一致。
      */
-    private MessageResponse toResponse(Message message, Map<Long, String> documentNameCache) {
+    @Transactional
+    public ConversationResponse updateKnowledgeBase(Long userId, Long conversationId, Long knowledgeBaseId) {
+        Conversation conversation = findOwnedConversation(userId, conversationId);
+        if (knowledgeBaseId != null) {
+            requireBindableKnowledgeBase(userId, knowledgeBaseId);
+        }
+        conversation.setKnowledgeBaseId(knowledgeBaseId);
+        Instant now = Instant.now();
+        // 回填内存实体的 updated_at，保证返回体时间戳与库中一致（UpdateWrapper 不会回写实体）
+        conversation.setUpdatedAt(now);
+        conversationRepository.update(null, new UpdateWrapper<Conversation>()
+                .eq("id", conversation.getId())
+                .set("knowledge_base_id", knowledgeBaseId)
+                .set("updated_at", now));
+        return toResponse(conversation);
+    }
+
+    /**
+     * 校验目标知识库可被当前用户绑定。
+     *
+     * <p>做什么：先按“未删除”查询，命中即通过（ARCHIVED 允许绑定，归档库的
+     * 既有会话可继续问答）；未命中时区分“已软删除”（404，提示可恢复）与
+     * “不存在/越权”（403，避免向非归属者泄露知识库存在性）。
+     */
+    private KnowledgeBase requireBindableKnowledgeBase(Long userId, Long knowledgeBaseId) {
+        return knowledgeBaseRepository.findByUserIdAndIdAndDeletedAtIsNull(userId, knowledgeBaseId)
+                .orElseGet(() -> {
+                    if (knowledgeBaseRepository.findByUserIdAndIdAndDeletedAtIsNotNull(userId, knowledgeBaseId)
+                            .isPresent()) {
+                        throw new ApiException(HttpStatus.NOT_FOUND, "知识库不存在或已删除");
+                    }
+                    throw new ApiException(HttpStatus.FORBIDDEN, "无权访问该知识库");
+                });
+    }
+
+    /**
+     * 将消息实体转为响应，并为助手消息拼装引用来源列表。
+     * knowledgeBaseBound 为 true 时走知识库切片解析（chunkId 指向 knowledge_chunks），
+     * 否则保持原有 document_chunks 解析路径不变。
+     */
+    private MessageResponse toResponse(
+            Message message,
+            Long userId,
+            boolean knowledgeBaseBound,
+            Map<Long, String> documentNameCache
+    ) {
         List<SourceResponse> sources = new ArrayList<>();
         // 仅助手消息带有引用来源
         if ("assistant".equals(message.getRole())) {
             List<AnswerSource> answerSources = answerSourceRepository.findByMessageIdOrderById(message.getId());
-            for (int i = 0; i < answerSources.size(); i++) {
-                AnswerSource answerSource = answerSources.get(i);
-                DocumentChunk chunk = documentChunkRepository.findById(answerSource.getChunkId()).orElse(null);
-                if (chunk == null) {
-                    continue;
-                }
-                // 优先用 AnswerSource 上记录的文档ID，缺失时回退到块所属文档
-                Long docId = answerSource.getDocumentId() != null
-                        ? answerSource.getDocumentId()
-                        : chunk.getDocumentId();
-                // 缓存文档名，避免重复查库
-                String filename = documentNameCache.computeIfAbsent(docId, id -> {
-                    Document doc = documentRepository.findById(id).orElse(null);
-                    return doc != null ? doc.getFilename() : "未知文档";
-                });
-                sources.add(new SourceResponse(
-                        i + 1,
-                        chunk.getId(),
-                        docId,
-                        filename,
-                        chunk.getPageStart(),
-                        chunk.getPageEnd(),
-                        chunk.getLocationLabel(),
-                        truncate(chunk.getContent())
-                ));
+            if (knowledgeBaseBound) {
+                appendKnowledgeBaseSources(sources, answerSources, userId);
+            } else {
+                appendDocumentSources(sources, answerSources, documentNameCache);
             }
         }
         return new MessageResponse(
@@ -175,6 +227,84 @@ public class ConversationServiceImpl implements ConversationService {
                 sources,
                 message.getCreatedAt()
         );
+    }
+
+    /**
+     * 未绑库会话的原有引用解析路径：AnswerSource.chunkId 指向 document_chunks，
+     * 文档名走 documentNameCache 缓存。逻辑与历史版本完全一致，不做任何行为改动。
+     */
+    private void appendDocumentSources(
+            List<SourceResponse> sources,
+            List<AnswerSource> answerSources,
+            Map<Long, String> documentNameCache
+    ) {
+        for (int i = 0; i < answerSources.size(); i++) {
+            AnswerSource answerSource = answerSources.get(i);
+            DocumentChunk chunk = documentChunkRepository.findById(answerSource.getChunkId()).orElse(null);
+            if (chunk == null) {
+                continue;
+            }
+            // 优先用 AnswerSource 上记录的文档ID，缺失时回退到块所属文档
+            Long docId = answerSource.getDocumentId() != null
+                    ? answerSource.getDocumentId()
+                    : chunk.getDocumentId();
+            // 缓存文档名，避免重复查库
+            String filename = documentNameCache.computeIfAbsent(docId, id -> {
+                Document doc = documentRepository.findById(id).orElse(null);
+                return doc != null ? doc.getFilename() : "未知文档";
+            });
+            sources.add(new SourceResponse(
+                    i + 1,
+                    chunk.getId(),
+                    docId,
+                    filename,
+                    chunk.getPageStart(),
+                    chunk.getPageEnd(),
+                    chunk.getLocationLabel(),
+                    truncate(chunk.getContent())
+            ));
+        }
+    }
+
+    /**
+     * 绑库会话的引用解析路径：AnswerSource.chunkId 指向 knowledge_chunks，
+     * 按 user_id 批量查询知识库切片视图（越权切片不可见，缺失时与原路径一致静默跳过）。
+     * 文件名由 JOIN knowledge_documents 直接带出，无需文档名缓存。
+     */
+    private void appendKnowledgeBaseSources(
+            List<SourceResponse> sources,
+            List<AnswerSource> answerSources,
+            Long userId
+    ) {
+        if (answerSources.isEmpty()) {
+            return;
+        }
+        List<Long> chunkIds = answerSources.stream().map(AnswerSource::getChunkId).distinct().toList();
+        Map<Long, KnowledgeChunkSourceView> viewById = new HashMap<>();
+        for (KnowledgeChunkSourceView view : knowledgeVectorIndexingService.findViewsByIds(userId, chunkIds)) {
+            viewById.put(view.chunkId(), view);
+        }
+        for (int i = 0; i < answerSources.size(); i++) {
+            AnswerSource answerSource = answerSources.get(i);
+            KnowledgeChunkSourceView view = viewById.get(answerSource.getChunkId());
+            if (view == null) {
+                continue;
+            }
+            // 优先用 AnswerSource 上记录的文档ID，缺失时回退到切片所属文档
+            Long docId = answerSource.getDocumentId() != null
+                    ? answerSource.getDocumentId()
+                    : view.documentId();
+            sources.add(new SourceResponse(
+                    i + 1,
+                    view.chunkId(),
+                    docId,
+                    view.filename(),
+                    view.pageStart(),
+                    view.pageEnd(),
+                    view.locationLabel(),
+                    truncate(view.content())
+            ));
+        }
     }
 
     /**
@@ -194,9 +324,11 @@ public class ConversationServiceImpl implements ConversationService {
         return new ConversationResponse(
                 conversation.getId(),
                 conversation.getProjectId(),
+                conversation.getKnowledgeBaseId(),
                 conversation.getTitle(),
                 conversation.getCreatedAt(),
                 conversation.getUpdatedAt()
         );
     }
-}
+}
+
