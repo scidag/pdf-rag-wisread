@@ -247,6 +247,21 @@ class KnowledgeBaseServiceTest {
     }
 
     @Test
+    void refreshDerivedStatusCompletesProcessingWhenAllDocumentsIndexed() {
+        // 处理中的库在全部文档索引完成后必须流转到 ACTIVE，否则永久卡死在 PROCESSING
+        KnowledgeBase knowledgeBase = kb(7L, KnowledgeBase.STATUS_PROCESSING);
+        when(knowledgeBaseRepository.findById(7L)).thenReturn(Optional.of(knowledgeBase));
+        when(knowledgeBaseRepository.countDocumentStatusByKnowledgeBaseId(7L)).thenReturn(List.of(
+                Map.of("status", "INDEXED", "cnt", 2L)
+        ));
+
+        KnowledgeBase refreshed = knowledgeBaseService.refreshDerivedStatus(7L);
+
+        assertThat(refreshed.getStatus()).isEqualTo(KnowledgeBase.STATUS_ACTIVE);
+        verify(knowledgeBaseRepository).updateById(knowledgeBase);
+    }
+
+    @Test
     void refreshDerivedStatusKeepsDraftWhenNoDocuments() {
         KnowledgeBase knowledgeBase = kb(7L, KnowledgeBase.STATUS_DRAFT);
         when(knowledgeBaseRepository.findById(7L)).thenReturn(Optional.of(knowledgeBase));

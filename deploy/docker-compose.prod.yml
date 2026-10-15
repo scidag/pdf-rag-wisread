@@ -80,6 +80,15 @@ services:
       MINIO_ROOT_USER: ${MINIO_ROOT_USER}
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
       MINIO_BUCKET: ${MINIO_BUCKET}
+    volumes:
+      # 日志留存：容器内 /app/logs → 宿主机 deploy/logs/backend/（按天日期命名的日志文件）
+      - ./logs/backend:/app/logs
+    logging:
+      # docker logs 实时流限 50MB x 3 份轮转，防撑爆磁盘；历史留存看上面的挂载目录
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "3"
 
   frontend:
     image: wisread-frontend:latest

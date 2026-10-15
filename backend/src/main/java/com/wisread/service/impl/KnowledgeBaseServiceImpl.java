@@ -298,7 +298,10 @@ public class KnowledgeBaseServiceImpl implements KnowledgeBaseService {
         String derivedStatus;
         if (hasProcessingLike) {
             derivedStatus = KnowledgeBase.STATUS_PROCESSING;
-        } else if (allIndexed && KnowledgeBase.STATUS_DRAFT.equals(knowledgeBase.getStatus())) {
+        } else if (allIndexed && (KnowledgeBase.STATUS_DRAFT.equals(knowledgeBase.getStatus())
+                || KnowledgeBase.STATUS_PROCESSING.equals(knowledgeBase.getStatus()))) {
+            // 全部文档索引完成：DRAFT（首次建库完成）或 PROCESSING（处理中收尾）都流转到 ACTIVE，
+            // 否则库会永久卡死在 PROCESSING（DRAFT→PROCESSING→? 无出口）
             derivedStatus = KnowledgeBase.STATUS_ACTIVE;
         } else {
             return knowledgeBase;

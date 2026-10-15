@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- 日志双写：控制台（docker logs 实时查看）+ logs/ 目录按天日期命名留存。
+     不配 <file> 固定名，当天日志直接命名为 wisread-backend.yyyy-MM-dd.0.log，
+     跨天自动切换新日期文件；历史保留 14 天、总量封顶 1GB，超限自动清理。 -->
+<configuration>
+    <!-- 复用 Spring Boot 默认控制台格式（含 logging.pattern.level 的 traceId） -->
+    <include resource="org/springframework/boot/logging/logback/defaults.xml"/>
+    <include resource="org/springframework/boot/logging/logback/console-appender.xml"/>
+
+    <appender name="FILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
+        <rollingPolicy class="ch.qos.logback.core.rolling.SizeAndTimeBasedRollingPolicy">
+            <fileNamePattern>logs/wisread-backend.%d{yyyy-MM-dd}.%i.log</fileNamePattern>
+            <maxFileSize>50MB</maxFileSize>
+            <maxHistory>14</maxHistory>
+            <totalSizeCap>1GB</totalSizeCap>
+        </rollingPolicy>
+        <encoder>
+            <pattern>%d{yyyy-MM-dd'T'HH:mm:ss.SSSXXX} %5p [traceId=%X{traceId:-}] %-40logger{39} : %m%n</pattern>
+        </encoder>
+    </appender>
+
+    <root level="INFO">
+        <appender-ref ref="CONSOLE"/>
+        <appender-ref ref="FILE"/>
+    </root>
+</configuration>

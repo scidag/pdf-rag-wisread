@@ -138,6 +138,13 @@ export default function KnowledgeBaseSelector({
 
   async function handleSelect(kbId: number | null) {
     if (submitting) return;
+    // 处理中的库禁止选择：尚未完成索引，选中也无法检索
+    if (kbId !== null) {
+      const target = kbs?.find((kb) => kb.id === kbId);
+      if (target?.status === "PROCESSING" && kbId !== knowledgeBaseId) {
+        return;
+      }
+    }
     if (kbId === knowledgeBaseId) {
       setOpen(false);
       return;
@@ -251,15 +258,18 @@ export default function KnowledgeBaseSelector({
                   )}
                   {selectable.map((kb) => {
                     const selected = kb.id === knowledgeBaseId;
+                    // 处理中的库禁止选择（灰显+提示），当前已绑定的库不受限（点击仅关闭下拉）
+                    const locked = kb.status === "PROCESSING" && !selected;
                     return (
                       <button
                         key={kb.id}
                         type="button"
                         role="option"
                         aria-selected={selected}
-                        disabled={submitting}
+                        aria-disabled={locked}
+                        disabled={submitting || locked}
                         onClick={() => handleSelect(kb.id)}
-                        className={`flex w-full items-center gap-[8px] rounded-[9px] px-[10px] py-[7px] text-left transition disabled:cursor-not-allowed disabled:opacity-55 ${
+                        className={`flex w-full items-center gap-[8px] rounded-[9px] px-[10px] py-[7px] text-left transition disabled:cursor-not-allowed disabled:opacity-45 ${
                           selected
                             ? "bg-[rgba(58,127,255,0.16)]"
                             : "hover:bg-[rgba(255,255,255,0.05)]"
@@ -270,9 +280,11 @@ export default function KnowledgeBaseSelector({
                             {kb.name}
                           </div>
                           <div className="mt-[2px] font-mono text-[0.62rem] text-[rgba(155,190,235,0.58)]">
-                            {kb.documentCount === 0
-                              ? "该知识库暂无文档"
-                              : `${kb.documentCount} 个文档`}
+                            {locked
+                              ? "索引处理中，完成后可选"
+                              : kb.documentCount === 0
+                                ? "该知识库暂无文档"
+                                : `${kb.documentCount} 个文档`}
                           </div>
                         </div>
                         <StatusBadge status={kb.status} />
