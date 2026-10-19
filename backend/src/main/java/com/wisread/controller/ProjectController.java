@@ -7,6 +7,8 @@ import com.wisread.dto.UpdateProjectRequest;
 import com.wisread.entity.Project;
 import com.wisread.service.ProjectService;
 import jakarta.validation.Valid;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
@@ -33,6 +35,8 @@ import java.util.Map;
 @RequestMapping("/api/v1/projects")
 public class ProjectController {
 
+    private static final Logger log = LoggerFactory.getLogger(ProjectController.class);
+
     private final ProjectService projectService;
 
     public ProjectController(ProjectService projectService) {
@@ -50,6 +54,7 @@ public class ProjectController {
     ) {
         Long userId = (Long) authentication.getPrincipal();
         Project project = projectService.create(userId, request);
+        log.info("创建项目 userId={} projectId={} name={}", userId, project.getId(), project.getName());
         return ResponseEntity.status(HttpStatus.CREATED).body(toResponse(userId, project));
     }
 
@@ -113,6 +118,7 @@ public class ProjectController {
     ) {
         Long userId = (Long) authentication.getPrincipal();
         Project project = projectService.update(userId, projectId, request);
+        log.info("更新项目 userId={} projectId={}", userId, projectId);
         return ResponseEntity.ok(toResponse(userId, project));
     }
 
@@ -127,6 +133,7 @@ public class ProjectController {
     ) {
         Long userId = (Long) authentication.getPrincipal();
         Project project = projectService.restore(userId, projectId);
+        log.info("恢复项目 userId={} projectId={}", userId, projectId);
         return ResponseEntity.ok(toResponse(userId, project));
     }
 
@@ -141,6 +148,7 @@ public class ProjectController {
     ) {
         Long userId = (Long) authentication.getPrincipal();
         projectService.delete(userId, projectId);
+        log.info("删除项目（软删除） userId={} projectId={}", userId, projectId);
         return ResponseEntity.noContent().build();
     }
 
@@ -155,6 +163,7 @@ public class ProjectController {
     ) {
         Long userId = (Long) authentication.getPrincipal();
         projectService.deleteBatch(userId, request.ids());
+        log.info("批量删除项目 userId={} count={} ids={}", userId, request.ids().size(), request.ids());
         return ResponseEntity.noContent().build();
     }
 

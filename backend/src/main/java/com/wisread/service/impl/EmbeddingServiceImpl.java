@@ -4,6 +4,8 @@ import com.wisread.service.EmbeddingService;
 import com.wisread.service.TokenCounter;
 import com.wisread.service.UsageLogService;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.ai.embedding.EmbeddingModel;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
@@ -20,6 +22,8 @@ import java.util.List;
  */
 @Service
 public class EmbeddingServiceImpl implements EmbeddingService {
+
+    private static final Logger log = LoggerFactory.getLogger(EmbeddingServiceImpl.class);
 
     // 单次请求最多携带的文本条数；避免单次请求体过大或超出模型批量上限
     private static final int MAX_BATCH_SIZE = 20;
@@ -47,15 +51,26 @@ public class EmbeddingServiceImpl implements EmbeddingService {
      * 为什么记录 token：为用量计费提供输入侧数据，userId 用于归属统计。
      */
     public List<float[]> embed(List<String> texts, Long userId) {
+        long startNanos = System.nanoTime();
         List<float[]> embeddings = new ArrayList<>(texts.size());
         // 以 MAX_BATCH_SIZE 为步长切片，逐批调用模型
-        for (int i = 0; i < texts.size(); i += MAX_BATCH_SIZE) {
-            List<String> batch = texts.subList(i, Math.min(i + MAX_BATCH_SIZE, texts.size()));
-            embeddings.addAll(embeddingModel.embed(batch));
-            // 估算本批输入 token 并落库计费日志
-            int inputTokens = batch.stream().mapToInt(tokenCounter::count).sum();
-            usageLogService.log(userId, embeddingModelName, inputTokens, 0);
+        try {
+            for (int i = 0; i < texts.size(); i += MAX_BATCH_SIZE) {
+                List<String> batch = texts.subList(i, Math.min(i + MAX_BATCH_SIZE, texts.size()));
+                embeddings.addAll(embeddingModel.embed(batch));
+                // 估算本批输入 token 并落库计费日志
+                int inputTokens = batch.stream().mapToInt(tokenCounter::count).sum();
+                usageLogService.log(userId, embeddingModelName, inputTokens, 0);
+                log.debug("Embedding 批次完成 userId={} batchIndex={} batchSize={} inputTokens={}",
+                        userId, i / MAX_BATCH_SIZE, batch.size(), inputTokens);
+            }
+        } catch (Exception exception) {
+            log.error("Embedding 调用失败 userId={} total={} completed={} model={}",
+                    userId, texts.size(), embeddings.size(), embeddingModelName, exception);
+            throw exception;
         }
+        log.info("向量化完成 userId={} texts={} model={} costMs={}",
+                userId, texts.size(), embeddingModelName, (System.nanoTime() - startNanos) / 1_000_000);
         return embeddings;
     }
 }

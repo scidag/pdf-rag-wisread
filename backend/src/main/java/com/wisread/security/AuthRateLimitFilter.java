@@ -6,6 +6,8 @@ import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
@@ -26,6 +28,8 @@ import java.time.Duration;
  */
 @Component
 public class AuthRateLimitFilter extends OncePerRequestFilter {
+
+    private static final Logger log = LoggerFactory.getLogger(AuthRateLimitFilter.class);
 
     // 固定窗口长度：1 分钟
     private static final Duration WINDOW = Duration.ofMinutes(1);
@@ -71,6 +75,8 @@ public class AuthRateLimitFilter extends OncePerRequestFilter {
 
         String key = bucket + ":" + resolveClientIp(request);
         if (!rateLimiter.tryAcquire(key, limit, WINDOW)) {
+            log.warn("认证限流触发：返回 429 path={} bucket={} ip={} limit={}perMin",
+                    path, bucket, resolveClientIp(request), limit);
             response.setStatus(HttpStatus.TOO_MANY_REQUESTS.value());
             response.setContentType("application/json;charset=UTF-8");
             response.getWriter().write("{\"code\":429,\"message\":\"too many requests\"}");

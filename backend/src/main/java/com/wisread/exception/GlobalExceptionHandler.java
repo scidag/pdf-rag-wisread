@@ -9,6 +9,8 @@ import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.multipart.MaxUploadSizeExceededException;
 
+import jakarta.servlet.http.HttpServletRequest;
+
 /**
  * 全局异常处理器。
  * 通过 {@code @RestControllerAdvice} 拦截整个应用的异常，将其统一转换为
@@ -24,7 +26,9 @@ public class GlobalExceptionHandler {
      * 直接采用异常中携带的 HTTP 状态码与消息返回，体现业务自定义错误。
      */
     @ExceptionHandler(ApiException.class)
-    public ResponseEntity<ErrorResponse> handleApiException(ApiException exception) {
+    public ResponseEntity<ErrorResponse> handleApiException(ApiException exception, HttpServletRequest request) {
+        log.warn("业务异常响应 path={} status={} message={}",
+                request.getRequestURI(), exception.getStatus().value(), exception.getMessage());
         return ResponseEntity
                 .status(exception.getStatus())
                 .body(new ErrorResponse(exception.getStatus().value(), exception.getMessage()));
@@ -35,13 +39,15 @@ public class GlobalExceptionHandler {
      * 提取首个字段错误消息返回 400；消息文案由各 DTO 的注解 message 指定（中文）。
      */
     @ExceptionHandler(MethodArgumentNotValidException.class)
-    public ResponseEntity<ErrorResponse> handleValidation(MethodArgumentNotValidException exception) {
+    public ResponseEntity<ErrorResponse> handleValidation(
+            MethodArgumentNotValidException exception, HttpServletRequest request) {
         String message = exception.getBindingResult()
                 .getFieldErrors()
                 .stream()
                 .findFirst()
                 .map(error -> error.getDefaultMessage())
                 .orElse("请求参数不合法");
+        log.warn("参数校验失败 path={} message={}", request.getRequestURI(), message);
         return ResponseEntity
                 .status(HttpStatus.BAD_REQUEST)
                 .body(new ErrorResponse(HttpStatus.BAD_REQUEST.value(), message));
@@ -52,7 +58,9 @@ public class GlobalExceptionHandler {
      * 返回 413 并提示文件超过 100MB 限制。
      */
     @ExceptionHandler(MaxUploadSizeExceededException.class)
-    public ResponseEntity<ErrorResponse> handleMaxUploadSize(MaxUploadSizeExceededException exception) {
+    public ResponseEntity<ErrorResponse> handleMaxUploadSize(
+            MaxUploadSizeExceededException exception, HttpServletRequest request) {
+        log.warn("上传文件超过大小限制 path={}", request.getRequestURI());
         return ResponseEntity
                 .status(HttpStatus.PAYLOAD_TOO_LARGE)
                 .body(new ErrorResponse(HttpStatus.PAYLOAD_TOO_LARGE.value(), "file exceeds 100MB limit"));

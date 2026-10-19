@@ -8,6 +8,8 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import com.wisread.entity.User;
 import com.wisread.repository.UserRepository;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpHeaders;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
@@ -26,6 +28,8 @@ import java.util.List;
  */
 @Component
 public class JwtAuthenticationFilter extends OncePerRequestFilter {
+
+    private static final Logger log = LoggerFactory.getLogger(JwtAuthenticationFilter.class);
 
     private final JwtService jwtService;
     private final TokenBlacklistService tokenBlacklistService;
@@ -59,6 +63,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                 String token = header.substring(7);
                 // 已登出/作废的 token 视为非法
                 if (tokenBlacklistService.isBlacklisted(token)) {
+                    log.debug("JWT 认证拒绝：token 已拉黑 path={}", request.getRequestURI());
                     throw new JwtException("token is blacklisted");
                 }
                 // 解析出用户 ID
@@ -78,8 +83,10 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                             );
                     SecurityContextHolder.getContext().setAuthentication(authentication);
                 }
-            } catch (Exception ignored) {
-                // 任何异常（签名错、过期、格式错）都视为未认证，清空上下文，不泄露细节
+            } catch (Exception exception) {
+                // 任何异常（签名错、过期、格式错）都视为未认证，清空上下文，不泄露细节；
+                // DEBUG 记录原因便于排查令牌问题（生产默认关闭，不泄露敏感信息）
+                log.debug("JWT 认证失败 path={} reason={}", request.getRequestURI(), exception.getMessage());
                 SecurityContextHolder.clearContext();
             }
         }

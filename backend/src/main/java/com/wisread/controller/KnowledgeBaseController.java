@@ -12,6 +12,8 @@ import com.wisread.entity.KnowledgeBase;
 import com.wisread.service.KnowledgeBaseService;
 import com.wisread.service.KnowledgeRetrievalTestService;
 import jakarta.validation.Valid;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
@@ -39,6 +41,8 @@ import java.util.Map;
 @RequestMapping("/api/v1/knowledge-bases")
 public class KnowledgeBaseController {
 
+    private static final Logger log = LoggerFactory.getLogger(KnowledgeBaseController.class);
+
     private final KnowledgeBaseService knowledgeBaseService;
     private final KnowledgeRetrievalTestService knowledgeRetrievalTestService;
 
@@ -61,6 +65,7 @@ public class KnowledgeBaseController {
     ) {
         Long userId = (Long) authentication.getPrincipal();
         KnowledgeBase knowledgeBase = knowledgeBaseService.create(userId, request);
+        log.info("创建知识库 userId={} knowledgeBaseId={} name={}", userId, knowledgeBase.getId(), knowledgeBase.getName());
         return ResponseEntity.status(HttpStatus.CREATED).body(toResponse(knowledgeBase));
     }
 
@@ -125,6 +130,7 @@ public class KnowledgeBaseController {
     ) {
         Long userId = (Long) authentication.getPrincipal();
         KnowledgeBase knowledgeBase = knowledgeBaseService.update(userId, id, request);
+        log.info("更新知识库 userId={} knowledgeBaseId={}", userId, id);
         return ResponseEntity.ok(toResponse(knowledgeBase));
     }
 
@@ -139,6 +145,7 @@ public class KnowledgeBaseController {
     ) {
         Long userId = (Long) authentication.getPrincipal();
         KnowledgeBase knowledgeBase = knowledgeBaseService.publish(userId, id);
+        log.info("发布知识库 userId={} knowledgeBaseId={} status={}", userId, id, knowledgeBase.getStatus());
         return ResponseEntity.ok(toResponse(knowledgeBase));
     }
 
@@ -153,6 +160,7 @@ public class KnowledgeBaseController {
     ) {
         Long userId = (Long) authentication.getPrincipal();
         KnowledgeBase knowledgeBase = knowledgeBaseService.archive(userId, id);
+        log.info("归档知识库 userId={} knowledgeBaseId={}", userId, id);
         return ResponseEntity.ok(toResponse(knowledgeBase));
     }
 
@@ -167,6 +175,7 @@ public class KnowledgeBaseController {
     ) {
         Long userId = (Long) authentication.getPrincipal();
         KnowledgeBase knowledgeBase = knowledgeBaseService.unarchive(userId, id);
+        log.info("取消归档知识库 userId={} knowledgeBaseId={}", userId, id);
         return ResponseEntity.ok(toResponse(knowledgeBase));
     }
 
@@ -181,6 +190,7 @@ public class KnowledgeBaseController {
     ) {
         Long userId = (Long) authentication.getPrincipal();
         KnowledgeBase knowledgeBase = knowledgeBaseService.restore(userId, id);
+        log.info("恢复知识库 userId={} knowledgeBaseId={}", userId, id);
         return ResponseEntity.ok(toResponse(knowledgeBase));
     }
 
@@ -195,6 +205,7 @@ public class KnowledgeBaseController {
     ) {
         Long userId = (Long) authentication.getPrincipal();
         knowledgeBaseService.delete(userId, id);
+        log.info("删除知识库（软删除） userId={} knowledgeBaseId={}", userId, id);
         return ResponseEntity.noContent().build();
     }
 
@@ -210,6 +221,7 @@ public class KnowledgeBaseController {
     ) {
         Long userId = (Long) authentication.getPrincipal();
         knowledgeBaseService.deleteBatch(userId, request.ids());
+        log.info("批量删除知识库 userId={} count={} ids={}", userId, request.ids().size(), request.ids());
         return ResponseEntity.noContent().build();
     }
 
@@ -239,7 +251,9 @@ public class KnowledgeBaseController {
             Authentication authentication
     ) {
         Long userId = (Long) authentication.getPrincipal();
-        return ResponseEntity.ok(knowledgeBaseService.updateRetrievalConfig(userId, id, request));
+        KnowledgeRetrievalConfigResponse response = knowledgeBaseService.updateRetrievalConfig(userId, id, request);
+        log.info("更新知识库检索配置 userId={} knowledgeBaseId={}", userId, id);
+        return ResponseEntity.ok(response);
     }
 
     /** POST /api/v1/knowledge-bases/{id}/retrieval-test：知识库检索测试（RAG 全链路演练）。

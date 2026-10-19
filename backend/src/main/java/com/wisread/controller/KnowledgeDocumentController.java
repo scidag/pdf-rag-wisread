@@ -5,6 +5,8 @@ import com.wisread.dto.KnowledgeDocumentBatchItemResponse;
 import com.wisread.dto.KnowledgeDocumentResponse;
 import com.wisread.entity.KnowledgeDocument;
 import com.wisread.service.KnowledgeDocumentService;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -31,6 +33,8 @@ import java.util.List;
 @RestController
 public class KnowledgeDocumentController {
 
+    private static final Logger log = LoggerFactory.getLogger(KnowledgeDocumentController.class);
+
     private final KnowledgeDocumentService knowledgeDocumentService;
 
     public KnowledgeDocumentController(KnowledgeDocumentService knowledgeDocumentService) {
@@ -49,6 +53,8 @@ public class KnowledgeDocumentController {
     ) {
         Long userId = (Long) authentication.getPrincipal();
         KnowledgeDocument document = knowledgeDocumentService.upload(userId, kbId, file);
+        log.info("上传知识库文档 userId={} knowledgeBaseId={} documentId={} filename={} size={}B",
+                userId, kbId, document.getId(), document.getFilename(), document.getFileSize());
         return ResponseEntity.status(HttpStatus.CREATED).body(toResponse(document));
     }
 
@@ -63,6 +69,7 @@ public class KnowledgeDocumentController {
             Authentication authentication
     ) {
         Long userId = (Long) authentication.getPrincipal();
+        log.info("批量上传知识库文档 userId={} knowledgeBaseId={} fileCount={}", userId, kbId, files.size());
         return ResponseEntity.ok(knowledgeDocumentService.batchUpload(userId, kbId, files));
     }
 
@@ -104,6 +111,7 @@ public class KnowledgeDocumentController {
     ) {
         Long userId = (Long) authentication.getPrincipal();
         knowledgeDocumentService.reparse(userId, id);
+        log.info("重新解析知识库文档 userId={} documentId={}", userId, id);
         return ResponseEntity.accepted().build();
     }
 
@@ -118,6 +126,7 @@ public class KnowledgeDocumentController {
     ) {
         Long userId = (Long) authentication.getPrincipal();
         knowledgeDocumentService.delete(userId, id);
+        log.info("删除知识库文档 userId={} documentId={}", userId, id);
         return ResponseEntity.noContent().build();
     }
 

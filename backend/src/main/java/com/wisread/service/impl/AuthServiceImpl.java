@@ -104,10 +104,12 @@ public class AuthServiceImpl implements AuthService {
     public AuthResponse register(RegisterRequest request) {
         // 用户名唯一性校验，冲突返回 409
         if (userRepository.existsByUsername(request.username())) {
+            log.warn("注册失败：用户名已存在 username={} email={}", request.username(), maskEmail(request.email()));
             throw new ApiException(HttpStatus.CONFLICT, "username already exists");
         }
         // 邮箱唯一性校验，冲突返回 409
         if (userRepository.existsByEmail(request.email())) {
+            log.warn("注册失败：邮箱已存在 email={}", maskEmail(request.email()));
             throw new ApiException(HttpStatus.CONFLICT, "email already exists");
         }
 
@@ -117,6 +119,7 @@ public class AuthServiceImpl implements AuthService {
         // 密码绝不明文存储，统一使用 BCrypt 哈希
         user.setPasswordHash(passwordEncoder.encode(request.password()));
         userRepository.insert(user);
+        log.info("注册成功 userId={} username={} email={}", user.getId(), user.getUsername(), maskEmail(user.getEmail()));
 
         // 注册即签发令牌（设备/IP 为空，由后续登录补全）
         return issueTokens(user, null, null);
@@ -137,19 +140,26 @@ public class AuthServiceImpl implements AuthService {
             // FR-6：对哑哈希执行同代价 BCrypt 比对再失败，消除响应时延侧信道
             passwordEncoder.matches(request.password(), dummyPasswordHash);
             metrics.loginFail("invalid_credentials");
+            log.warn("登录失败：凭据错误（用户不存在） email={} ip={} device={}",
+                    maskEmail(request.email()), ipAddress, device);
             throw new ApiException(HttpStatus.UNAUTHORIZED, "invalid credentials");
         }
         // 校验密码哈希是否匹配
         if (!passwordEncoder.matches(request.password(), user.getPasswordHash())) {
             metrics.loginFail("invalid_credentials");
+            log.warn("登录失败：密码错误 email={} ip={} device={}",
+                    maskEmail(request.email()), ipAddress, device);
             throw new ApiException(HttpStatus.UNAUTHORIZED, "invalid credentials");
         }
         // 账号状态校验：状态为空或非 1 视为被禁用
         if (user.getStatus() == null || user.getStatus() != 1) {
             metrics.loginFail("disabled");
+            log.warn("登录失败：账号被禁用 userId={} email={} ip={}",
+                    user.getId(), maskEmail(request.email()), ipAddress);
             throw new ApiException(HttpStatus.UNAUTHORIZED, "account disabled");
         }
         metrics.loginSuccess();
+        log.info("登录成功 userId={} ip={} device={}", user.getId(), ipAddress, device);
         return issueTokens(user, device, ipAddress);
     }
 
@@ -177,11 +187,13 @@ public class AuthServiceImpl implements AuthService {
         }
         if (!JwtService.TYP_REFRESH.equals(typ)
                 && !(authProperties.isLegacyTypAccepted() && typ == null)) {
+            log.warn("刷新失败：令牌类型不合法 ip={} device={}", ipAddress, device);
             throw new ApiException(HttpStatus.UNAUTHORIZED, "invalid refresh token");
         }
 
         // FR-2：登出后 refresh 令牌的 jti 已入黑名单，不可再使用
         if (tokenBlacklistService.isBlacklisted(refreshToken)) {
+            log.warn("刷新失败：令牌已拉黑（登出后复用） ip={} device={}", ipAddress, device);
             throw new ApiException(HttpStatus.UNAUTHORIZED, "invalid refresh token");
         }
 
@@ -190,10 +202,14 @@ public class AuthServiceImpl implements AuthService {
                 // 命中上一代哈希（PG 模式）：判定泄露，吊销该用户所有会话
                 sessionStore.revokeAll(replay.userId());
                 metrics.refreshReplay();
+                log.warn("安全事件：刷新令牌重放，已吊销该用户全部会话 userId={} ip={} device={}",
+                        replay.userId(), ipAddress, device);
                 throw new ApiException(HttpStatus.UNAUTHORIZED, "refresh token reuse detected");
             }
-            case LocateResult.NotFound nf ->
-                    throw new ApiException(HttpStatus.UNAUTHORIZED, "invalid refresh token");
+            case LocateResult.NotFound nf -> {
+                log.warn("刷新失败：会话不存在 ip={} device={}", ipAddress, device);
+                throw new ApiException(HttpStatus.UNAUTHORIZED, "invalid refresh token");
+            }
             case LocateResult.Previous previous -> handleGrace(previous.ctx(), device, ipAddress);
             case LocateResult.Found found ->
                     rotateAndIssue(found.session(), refreshToken, device, ipAddress);
@@ -210,6 +226,7 @@ public class AuthServiceImpl implements AuthService {
     public void logout(String refreshToken) {
         if (refreshToken != null && !refreshToken.isBlank()) {
             sessionStore.delete(refreshToken);
+            log.info("登出成功：会话已吊销");
         }
     }
 
@@ -243,6 +260,7 @@ public class AuthServiceImpl implements AuthService {
         return switch (outcome) {
             case RotateOutcome.Found f -> {
                 metrics.refreshSuccess();
+                log.info("刷新成功 userId={} ip={} device={}", user.getId(), ipAddress, device);
                 yield buildResponse(user, newRefreshToken);
             }
             // 并发竞态：locate 与 rotate 之间另一请求已完成轮换 → 走宽限判定
@@ -250,6 +268,8 @@ public class AuthServiceImpl implements AuthService {
             case RotateOutcome.Replay replay -> {
                 sessionStore.revokeAll(replay.userId());
                 metrics.refreshReplay();
+                log.warn("安全事件：刷新令牌重放（轮换竞态），已吊销该用户全部会话 userId={} ip={} device={}",
+                        replay.userId(), ipAddress, device);
                 throw new ApiException(HttpStatus.UNAUTHORIZED, "refresh token reuse detected");
             }
             case RotateOutcome.NotFound nf ->
@@ -276,6 +296,7 @@ public class AuthServiceImpl implements AuthService {
         } catch (Exception e) {
             // 解密失败（密钥轮换边缘场景等）：fail-closed
             metrics.sessionError();
+            log.warn("刷新宽限失败：最新令牌解密失败（fail-closed） device={}", device, e);
             throw new ApiException(HttpStatus.UNAUTHORIZED, "invalid refresh token");
         }
 
@@ -299,6 +320,8 @@ public class AuthServiceImpl implements AuthService {
                 || (authProperties.isRefreshGraceStrictIp() && ipMismatch)) {
             sessionStore.revokeAll(user.getId());
             metrics.refreshReplay();
+            log.warn("安全事件：宽限判定失败视为重放，已吊销该用户全部会话 userId={} outsideWindow={} deviceMismatch={} ipMismatch={}",
+                    user.getId(), outsideWindow, deviceMismatch, ipMismatch);
             throw new ApiException(HttpStatus.UNAUTHORIZED, "refresh token reuse detected");
         }
         if (ipMismatch) {
@@ -308,6 +331,7 @@ public class AuthServiceImpl implements AuthService {
         }
 
         metrics.refreshGrace();
+        log.info("刷新宽限通过：重发同一最新令牌 userId={} ip={}", user.getId(), ipAddress);
         // 重发同一最新 token：多标签页 Cookie 收敛为同一值，轮换代不变
         return buildResponse(user, latestToken);
     }
@@ -345,5 +369,20 @@ public class AuthServiceImpl implements AuthService {
 
     private Set<String> rolesOf(User user) {
         return Set.of(user.getRole().name());
+    }
+
+    /**
+     * 邮箱脱敏：仅保留本地部分首字符，其余以 *** 代替（如 a***@example.com），
+     * 用于日志输出以满足安全红线（日志不得出现完整邮箱）。
+     */
+    private static String maskEmail(String email) {
+        if (email == null || email.isBlank()) {
+            return "***";
+        }
+        int at = email.indexOf('@');
+        if (at <= 0) {
+            return "***";
+        }
+        return email.charAt(0) + "***" + email.substring(at);
     }
 }

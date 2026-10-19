@@ -13,6 +13,8 @@ import com.wisread.service.KnowledgeBaseService;
 import com.wisread.service.KnowledgeDocumentProcessingService;
 import com.wisread.service.KnowledgeVectorIndexingService;
 import com.wisread.service.MinioStorageService;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.scheduling.annotation.Async;
@@ -46,6 +48,8 @@ import java.util.List;
  */
 @Service
 public class KnowledgeDocumentProcessingServiceImpl implements KnowledgeDocumentProcessingService {
+
+    private static final Logger log = LoggerFactory.getLogger(KnowledgeDocumentProcessingServiceImpl.class);
 
     // 单文档 token 总量上限（50 万），超出视为不合规文档，直接失败
     private static final int MAX_TOKEN_COUNT = 500_000;
@@ -105,15 +109,20 @@ public class KnowledgeDocumentProcessingServiceImpl implements KnowledgeDocument
      * 状态推进到 INDEXED；每个状态变化点都刷新知识库派生状态。
      */
     private void processInternal(Long documentId, Long userId) {
+        long startNanos = System.nanoTime();
         // 异步线程中文档可能已被并发删除，查不到时直接放弃本次处理
         KnowledgeDocument document = knowledgeDocumentRepository.findById(documentId).orElse(null);
         if (document == null) {
+            log.debug("知识库文档处理放弃：文档不存在（可能已被删除） documentId={} userId={}", documentId, userId);
             return;
         }
         // 原子抢占 UPLOADED -> PROCESSING，避免并发重复处理；抢占失败说明他人已接管
         if (knowledgeDocumentRepository.claimProcessing(documentId) == 0) {
+            log.info("知识库文档处理跳过：已被其他线程抢占 documentId={}", documentId);
             return;
         }
+        log.info("知识库文档处理开始 documentId={} knowledgeBaseId={} userId={} filename={} attempt={}",
+                documentId, document.getKnowledgeBaseId(), userId, document.getFilename(), document.getRetryCount());
         document.setStatus(KnowledgeDocument.STATUS_PROCESSING);
         document.setErrorMessage(null);
         knowledgeDocumentRepository.updateById(document);
@@ -124,9 +133,11 @@ public class KnowledgeDocumentProcessingServiceImpl implements KnowledgeDocument
             knowledgeVectorIndexingService.deleteByDocumentId(documentId);
             // 从对象存储取回原始字节
             byte[] fileBytes = minioStorageService.getObject(document.getFileKey());
+            log.debug("知识库文档 MinIO 取件完成 documentId={} bytes={}", documentId, fileBytes.length);
             // 按文档类型抽取定位片段
             DocumentParsingResult parsingResult = documentParsingService.parse(fileBytes, document.getFileType());
             List<PageText> pages = parsingResult.segments();
+            log.info("知识库文档解析完成 documentId={} locations={}", documentId, parsingResult.locationCount());
             // 所有定位片段均为空文本，视为扫描件/空文档，直接失败
             if (pages.stream().allMatch(page -> page.text().isBlank())) {
                 throw new ApiException(HttpStatus.UNPROCESSABLE_ENTITY, "文档为扫描件或无文本内容，无法解析");
@@ -142,6 +153,7 @@ public class KnowledgeDocumentProcessingServiceImpl implements KnowledgeDocument
                 nextChunkIndex += pageChunks.size();
                 totalTokens += pageChunks.stream().mapToInt(TextChunk::tokenCount).sum();
             }
+            log.info("知识库文档分块完成 documentId={} chunks={} totalTokens={}", documentId, chunks.size(), totalTokens);
             // 全局 token 上限校验，超出直接失败避免后续成本失控
             if (totalTokens > MAX_TOKEN_COUNT) {
                 throw new ApiException(HttpStatus.UNPROCESSABLE_ENTITY, "文档超过 500000 token 上限，无法索引");
@@ -161,8 +173,14 @@ public class KnowledgeDocumentProcessingServiceImpl implements KnowledgeDocument
             document.setErrorMessage(null);
             knowledgeDocumentRepository.updateById(document);
             knowledgeBaseService.refreshDerivedStatus(document.getKnowledgeBaseId());
+            log.info("知识库文档索引成功 documentId={} knowledgeBaseId={} status=UPLOADED→INDEXED chunks={} tokens={} pages={} costMs={}",
+                    documentId, document.getKnowledgeBaseId(), chunks.size(), totalTokens,
+                    parsingResult.locationCount(), (System.nanoTime() - startNanos) / 1_000_000);
         } catch (Exception exception) {
             // 统一进入失败处理（含重试逻辑）
+            log.error("知识库文档处理异常 documentId={} filename={} attempt={} costMs={}",
+                    documentId, document.getFilename(), document.getRetryCount(),
+                    (System.nanoTime() - startNanos) / 1_000_000, exception);
             handleFailure(document, exception);
         }
     }
@@ -185,6 +203,8 @@ public class KnowledgeDocumentProcessingServiceImpl implements KnowledgeDocument
             document.setErrorMessage(exception.getMessage());
             knowledgeDocumentRepository.updateById(document);
             knowledgeBaseService.refreshDerivedStatus(document.getKnowledgeBaseId());
+            log.warn("知识库文档处理失败，自动重试 documentId={} status=PROCESSING→UPLOADED reason={}",
+                    document.getId(), exception.getMessage());
             // 立即重试一次
             processInternal(document.getId(), document.getUserId());
         } else {
@@ -193,6 +213,8 @@ public class KnowledgeDocumentProcessingServiceImpl implements KnowledgeDocument
             document.setErrorMessage(exception.getMessage());
             knowledgeDocumentRepository.updateById(document);
             knowledgeBaseService.refreshDerivedStatus(document.getKnowledgeBaseId());
+            log.error("知识库文档索引最终失败 documentId={} knowledgeBaseId={} status=→FAILED reason={}",
+                    document.getId(), document.getKnowledgeBaseId(), exception.getMessage());
         }
     }
 
@@ -214,6 +236,8 @@ public class KnowledgeDocumentProcessingServiceImpl implements KnowledgeDocument
                 document.setErrorMessage("文档处理超时，已达到最大重试次数");
                 knowledgeDocumentRepository.updateById(document);
                 knowledgeBaseService.refreshDerivedStatus(document.getKnowledgeBaseId());
+                log.warn("知识库文档卡死恢复：已达重试上限，标记失败 documentId={} status=PROCESSING→FAILED",
+                        document.getId());
                 continue;
             }
             // 消耗一次重试机会并复位为 UPLOADED（CAS 抢占要求 UPLOADED 起点），随后立即重新处理
@@ -222,6 +246,8 @@ public class KnowledgeDocumentProcessingServiceImpl implements KnowledgeDocument
             document.setErrorMessage("文档处理超时，自动重试");
             knowledgeDocumentRepository.updateById(document);
             knowledgeBaseService.refreshDerivedStatus(document.getKnowledgeBaseId());
+            log.warn("知识库文档卡死恢复：超时自动重试 documentId={} status=PROCESSING→UPLOADED",
+                    document.getId());
             processInternal(document.getId(), document.getUserId());
         }
     }

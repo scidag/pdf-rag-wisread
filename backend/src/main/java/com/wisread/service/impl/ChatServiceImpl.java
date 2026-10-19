@@ -289,6 +289,9 @@ public class ChatServiceImpl implements ChatService {
             // 直接返回固定文案，防止大模型在无依据时幻觉编造
             if (chunks.isEmpty()
                     || (conversation.getKnowledgeBaseId() == null && chunks.get(0).distance() > DISTANCE_THRESHOLD)) {
+                log.info("触发拒答：无可靠检索依据 conversationId={} userId={} knowledgeBaseId={} bestDistance={}",
+                        conversation.getId(), conversation.getUserId(), conversation.getKnowledgeBaseId(),
+                        chunks.isEmpty() ? "none" : chunks.get(0).distance());
                 sendNoAnswer(conversation, request.content(), emitter);
                 return;
             }

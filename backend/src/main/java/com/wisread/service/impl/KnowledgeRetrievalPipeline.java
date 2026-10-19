@@ -4,6 +4,9 @@ import com.wisread.entity.KnowledgeBase;
 import com.wisread.model.ChunkSearchResult;
 import com.wisread.model.KnowledgeChunkSearchResult;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import java.util.ArrayList;
 import java.util.List;
 
@@ -24,6 +27,8 @@ import java.util.List;
  * </ul>
  */
 public final class KnowledgeRetrievalPipeline {
+
+    private static final Logger log = LoggerFactory.getLogger(KnowledgeRetrievalPipeline.class);
 
     private KnowledgeRetrievalPipeline() {
     }
@@ -60,9 +65,14 @@ public final class KnowledgeRetrievalPipeline {
                 ));
             }
         }
+        // 记录阈值过滤口径：过滤前后条数，便于观测阈值配置是否过严导致全部命中被丢弃
+        log.info("检索阈值过滤 knowledgeBaseId={} threshold={} before={} after={}",
+                knowledgeBase.getId(), threshold, hits.size(), filtered.size());
         if (Boolean.TRUE.equals(knowledgeBase.getRerankEnabled())) {
             Integer rerankK = knowledgeBase.getRerankK();
             if (rerankK != null && rerankK < filtered.size()) {
+                log.info("rerank 截断 knowledgeBaseId={} rerankK={} before={} after={}",
+                        knowledgeBase.getId(), rerankK, filtered.size(), rerankK);
                 return filtered.subList(0, rerankK);
             }
         }

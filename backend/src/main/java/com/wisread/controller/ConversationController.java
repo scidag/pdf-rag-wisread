@@ -8,6 +8,8 @@ import com.wisread.dto.UpdateConversationRequest;
 import com.wisread.service.ChatService;
 import com.wisread.service.ConversationService;
 import jakarta.validation.Valid;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -34,6 +36,8 @@ import java.util.List;
 @RequestMapping("/api/v1/conversations")
 public class ConversationController {
 
+    private static final Logger log = LoggerFactory.getLogger(ConversationController.class);
+
     private final ConversationService conversationService;
     private final ChatService chatService;
 
@@ -52,8 +56,9 @@ public class ConversationController {
             Authentication authentication
     ) {
         Long userId = (Long) authentication.getPrincipal();
-        return ResponseEntity.status(HttpStatus.CREATED)
-                .body(conversationService.create(userId, request));
+        ConversationResponse response = conversationService.create(userId, request);
+        log.info("创建会话 userId={} conversationId={} projectId={}", userId, response.id(), response.projectId());
+        return ResponseEntity.status(HttpStatus.CREATED).body(response);
     }
 
     /** GET /api/v1/conversations?projectId=：列出某项目下的会话列表。
@@ -81,7 +86,11 @@ public class ConversationController {
             Authentication authentication
     ) {
         Long userId = (Long) authentication.getPrincipal();
-        return ResponseEntity.ok(conversationService.updateKnowledgeBase(userId, conversationId, request.knowledgeBaseId()));
+        ConversationResponse response =
+                conversationService.updateKnowledgeBase(userId, conversationId, request.knowledgeBaseId());
+        log.info("切换会话绑库 userId={} conversationId={} knowledgeBaseId={}",
+                userId, conversationId, request.knowledgeBaseId());
+        return ResponseEntity.ok(response);
     }
 
     /** GET /api/v1/conversations/{conversationId}/messages：获取某会话的历史消息列表。

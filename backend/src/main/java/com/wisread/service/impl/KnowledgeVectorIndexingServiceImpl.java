@@ -6,6 +6,8 @@ import com.wisread.model.KnowledgeChunkView;
 import com.wisread.model.TextChunk;
 import com.wisread.service.KnowledgeVectorIndexingService;
 import org.postgresql.util.PGobject;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -26,6 +28,8 @@ import java.util.stream.IntStream;
  */
 @Service
 public class KnowledgeVectorIndexingServiceImpl implements KnowledgeVectorIndexingService {
+
+    private static final Logger log = LoggerFactory.getLogger(KnowledgeVectorIndexingServiceImpl.class);
 
     private final JdbcTemplate jdbcTemplate;
 
@@ -48,6 +52,7 @@ public class KnowledgeVectorIndexingServiceImpl implements KnowledgeVectorIndexi
             List<float[]> embeddings,
             String modelVersion
     ) {
+        long startNanos = System.nanoTime();
         for (int i = 0; i < chunks.size(); i++) {
             TextChunk chunk = chunks.get(i);
             jdbcTemplate.update(
@@ -70,6 +75,9 @@ public class KnowledgeVectorIndexingServiceImpl implements KnowledgeVectorIndexi
                     modelVersion
             );
         }
+        log.info("知识库文档向量写入完成 documentId={} knowledgeBaseId={} userId={} chunks={} model={} costMs={}",
+                documentId, knowledgeBaseId, userId, chunks.size(), modelVersion,
+                (System.nanoTime() - startNanos) / 1_000_000);
     }
 
     /**
@@ -79,6 +87,7 @@ public class KnowledgeVectorIndexingServiceImpl implements KnowledgeVectorIndexi
     @Transactional
     public void deleteByDocumentId(Long documentId) {
         jdbcTemplate.update("DELETE FROM knowledge_chunks WHERE document_id = ?", documentId);
+        log.debug("知识库文档向量清理完成 documentId={}", documentId);
     }
 
     /**
@@ -96,6 +105,7 @@ public class KnowledgeVectorIndexingServiceImpl implements KnowledgeVectorIndexi
             float[] queryEmbedding,
             int topK
     ) {
+        long startNanos = System.nanoTime();
         String sql = """
                 SELECT kc.id, kc.document_id, kd.filename AS document_filename, kc.content,
                        kc.page_start, kc.page_end, kc.location_label,
@@ -108,7 +118,7 @@ public class KnowledgeVectorIndexingServiceImpl implements KnowledgeVectorIndexi
                 ORDER BY distance
                 LIMIT ?
                 """;
-        return jdbcTemplate.query(
+        List<KnowledgeChunkSearchResult> results = jdbcTemplate.query(
                 sql,
                 (resultSet, rowNum) -> new KnowledgeChunkSearchResult(
                         resultSet.getLong("id"),
@@ -126,6 +136,9 @@ public class KnowledgeVectorIndexingServiceImpl implements KnowledgeVectorIndexi
                 knowledgeBaseId,
                 topK
         );
+        log.info("知识库向量检索完成 userId={} knowledgeBaseId={} topK={} hits={} costMs={}",
+                userId, knowledgeBaseId, topK, results.size(), (System.nanoTime() - startNanos) / 1_000_000);
+        return results;
     }
 
     /**

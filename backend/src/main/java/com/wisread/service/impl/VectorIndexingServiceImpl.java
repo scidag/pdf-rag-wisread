@@ -5,6 +5,8 @@ import com.wisread.service.VectorIndexingService;
 import com.wisread.model.TextChunk;
 import com.wisread.model.ChunkSearchResult;
 import org.postgresql.util.PGobject;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -23,6 +25,8 @@ import java.util.stream.IntStream;
  */
 @Service
 public class VectorIndexingServiceImpl implements VectorIndexingService {
+
+    private static final Logger log = LoggerFactory.getLogger(VectorIndexingServiceImpl.class);
 
     private final JdbcTemplate jdbcTemplate;
 
@@ -44,6 +48,7 @@ public class VectorIndexingServiceImpl implements VectorIndexingService {
             List<float[]> embeddings,
             String modelVersion
     ) {
+        long startNanos = System.nanoTime();
         for (int i = 0; i < chunks.size(); i++) {
             TextChunk chunk = chunks.get(i);
             jdbcTemplate.update(
@@ -64,6 +69,8 @@ public class VectorIndexingServiceImpl implements VectorIndexingService {
                     modelVersion
             );
         }
+        log.info("项目文档向量写入完成 documentId={} userId={} chunks={} model={} costMs={}",
+                documentId, userId, chunks.size(), modelVersion, (System.nanoTime() - startNanos) / 1_000_000);
     }
 
     /**
@@ -72,6 +79,7 @@ public class VectorIndexingServiceImpl implements VectorIndexingService {
     @Transactional
     public void deleteByDocumentId(Long documentId) {
         jdbcTemplate.update("DELETE FROM document_chunks WHERE document_id = ?", documentId);
+        log.debug("项目文档向量清理完成 documentId={}", documentId);
     }
 
     /**
@@ -83,6 +91,7 @@ public class VectorIndexingServiceImpl implements VectorIndexingService {
      * 距离用 <=> 余弦距离（越小越相似），按距离升序取 LIMIT 个最相关片段。
      */
     public List<ChunkSearchResult> searchWithContent(Long userId, Long projectId, float[] queryEmbedding, int limit) {
+        long startNanos = System.nanoTime();
         String sql = """
                 SELECT dc.id, dc.document_id, dc.content, dc.page_start, dc.page_end, dc.location_label,
                        dc.embedding <=> CAST(? AS vector) AS distance,
@@ -95,7 +104,7 @@ public class VectorIndexingServiceImpl implements VectorIndexingService {
                 ORDER BY distance
                 LIMIT ?
                 """;
-        return jdbcTemplate.query(
+        List<ChunkSearchResult> results = jdbcTemplate.query(
                 sql,
                 (resultSet, rowNum) -> new ChunkSearchResult(
                         resultSet.getLong("id"),
@@ -113,6 +122,9 @@ public class VectorIndexingServiceImpl implements VectorIndexingService {
                 projectId,
                 limit
         );
+        log.info("项目向量检索完成 userId={} projectId={} topK={} hits={} costMs={}",
+                userId, projectId, limit, results.size(), (System.nanoTime() - startNanos) / 1_000_000);
+        return results;
     }
 
     /**
@@ -134,4 +146,5 @@ public class VectorIndexingServiceImpl implements VectorIndexingService {
             throw new IllegalStateException("failed to build pgvector literal", exception);
         }
     }
-}
+}
+

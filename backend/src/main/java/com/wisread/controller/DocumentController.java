@@ -3,6 +3,8 @@ package com.wisread.controller;
 import com.wisread.dto.DocumentResponse;
 import com.wisread.model.DocumentType;
 import com.wisread.service.DocumentService;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -28,6 +30,8 @@ import java.util.List;
 @RequestMapping("/api/v1/documents")
 public class DocumentController {
 
+    private static final Logger log = LoggerFactory.getLogger(DocumentController.class);
+
     private final DocumentService documentService;
 
     public DocumentController(DocumentService documentService) {
@@ -45,8 +49,10 @@ public class DocumentController {
             Authentication authentication
     ) {
         Long userId = (Long) authentication.getPrincipal();
-        return ResponseEntity.status(HttpStatus.CREATED)
-                .body(documentService.upload(userId, projectId, file));
+        DocumentResponse response = documentService.upload(userId, projectId, file);
+        log.info("上传项目文档 userId={} projectId={} documentId={} filename={} size={}B",
+                userId, projectId, response.id(), response.filename(), response.fileSize());
+        return ResponseEntity.status(HttpStatus.CREATED).body(response);
     }
 
     /** GET /api/v1/documents?projectId=：列出某项目下的文档列表。
@@ -117,6 +123,7 @@ public class DocumentController {
     ) {
         Long userId = (Long) authentication.getPrincipal();
         documentService.delete(userId, documentId);
+        log.info("删除项目文档 userId={} documentId={}", userId, documentId);
         return ResponseEntity.noContent().build();
     }
 }
