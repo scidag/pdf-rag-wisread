@@ -48,6 +48,12 @@ public interface KnowledgeDocumentService {
     KnowledgeDocumentResponse get(Long userId, Long documentId);
 
     /**
+     * 获取文档原始字节内容（用于前端预览）。
+     * 校验归属后从对象存储读取文件字节。
+     */
+    byte[] getContent(Long userId, Long documentId);
+
+    /**
      * 重新解析文档：清理旧向量、retryCount 清零、状态复位 UPLOADED 并重新触发异步处理（202 语义）。
      * 文档处于 PROCESSING 时抛 409“文档处理中，请勿重复操作”；ARCHIVED 知识库禁止重新解析（409）。
      */

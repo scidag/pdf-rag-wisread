@@ -7,6 +7,7 @@ import {
   ArchiveRestore,
   ArrowLeft,
   Check,
+  Eye,
   FileText,
   Layers,
   Loader2,
@@ -21,6 +22,7 @@ import {
   batchUploadKnowledgeDocuments,
   deleteKnowledgeDocument,
   getKnowledgeBase,
+  getKnowledgeDocumentContent,
   listKnowledgeDocuments,
   publishKnowledgeBase,
   reparseKnowledgeDocument,
@@ -103,6 +105,12 @@ export default function KnowledgeBaseDetailPage() {
   const [batchResults, setBatchResults] = useState<UploadResultItem[] | null>(null);
   const [chunkDrawerDoc, setChunkDrawerDoc] = useState<KnowledgeDocument | null>(null);
   const [chunkDrawerOpen, setChunkDrawerOpen] = useState(false);
+  // 文档预览：blob URL + 当前预览文档；previewingId 控制按钮加载态
+  const [preview, setPreview] = useState<{
+    doc: KnowledgeDocument;
+    url: string;
+  } | null>(null);
+  const [previewingId, setPreviewingId] = useState<number | null>(null);
 
   const singleInputRef = useRef<HTMLInputElement>(null);
   const batchInputRef = useRef<HTMLInputElement>(null);
@@ -280,6 +288,27 @@ export default function KnowledgeBaseDetailPage() {
       return;
     }
     singleInputRef.current?.click();
+  }
+
+  function closePreview() {
+    if (preview) {
+      URL.revokeObjectURL(preview.url);
+    }
+    setPreview(null);
+  }
+
+  // 预览：拉取原始文件生成 blob URL，弹层内 iframe 渲染（与项目侧文档预览交互一致）
+  async function handlePreview(doc: KnowledgeDocument) {
+    setPreviewingId(doc.id);
+    setActionError(null);
+    try {
+      const blob = await getKnowledgeDocumentContent(doc.id);
+      setPreview({ doc, url: URL.createObjectURL(blob) });
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : "预览失败，请稍后重试");
+    } finally {
+      setPreviewingId(null);
+    }
   }
 
   async function handleLogout() {
@@ -619,6 +648,20 @@ export default function KnowledgeBaseDetailPage() {
                             )}
                             <button
                               type="button"
+                              disabled={previewingId !== null}
+                              onClick={() => handlePreview(doc)}
+                              aria-label={`预览 ${doc.filename}`}
+                              title="预览"
+                              className={`${iconBtn} disabled:cursor-wait disabled:opacity-50`}
+                            >
+                              {previewingId === doc.id ? (
+                                <Loader2 className="h-[15px] w-[15px] animate-spin" />
+                              ) : (
+                                <Eye className="h-[15px] w-[15px]" />
+                              )}
+                            </button>
+                            <button
+                              type="button"
                               disabled={busyDocId === doc.id}
                               onClick={() => handleDeleteDoc(doc)}
                               aria-label={`删除 ${doc.filename}`}
@@ -651,6 +694,39 @@ export default function KnowledgeBaseDetailPage() {
         open={chunkDrawerOpen}
         onClose={() => setChunkDrawerOpen(false)}
       />
+
+      {/* 文档预览弹层（全屏 iframe，复用项目侧预览交互） */}
+      {preview && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-label={`预览 ${preview.doc.filename}`}
+          className="fixed inset-0 z-50 flex flex-col bg-black/75 p-[clamp(8px,2vw,24px)]"
+        >
+          <div className="flex h-12 shrink-0 items-center gap-3 rounded-t-xl border border-b-0 border-[rgba(255,255,255,0.1)] bg-[rgba(8,16,30,0.98)] px-4">
+            <FileText className="h-4 w-4 shrink-0 text-[rgba(130,185,255,0.9)]" />
+            <span
+              className="truncate text-[0.8rem] font-semibold text-[rgba(220,235,255,0.92)]"
+              title={preview.doc.filename}
+            >
+              {preview.doc.filename}
+            </span>
+            <button
+              type="button"
+              onClick={closePreview}
+              aria-label="关闭预览"
+              className="ml-auto flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-[rgba(180,205,240,0.62)] transition hover:bg-[rgba(255,255,255,0.07)] hover:text-[rgba(230,240,255,0.95)]"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+          <iframe
+            title={`${preview.doc.filename} 预览`}
+            src={preview.url}
+            className="min-h-0 w-full flex-1 rounded-b-xl border border-[rgba(255,255,255,0.1)] bg-white"
+          />
+        </div>
+      )}
     </main>
   );
 }

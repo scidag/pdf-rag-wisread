@@ -204,6 +204,38 @@ export function deleteKnowledgeDocument(documentId: number) {
   return kbFetch<void>(`/knowledge-documents/${documentId}`, { method: "DELETE" });
 }
 
+/**
+ * 获取知识库文档原始内容（Blob），用于前端预览。
+ * 二进制响应不走 kbFetch（其按 JSON 解析会报"服务响应异常"），
+ * 自行处理鉴权头与 401 刷新重试，与 kbFetch 行为对齐。
+ */
+export async function getKnowledgeDocumentContent(
+  documentId: number
+): Promise<Blob> {
+  const request = async (): Promise<Response> => {
+    const headers = new Headers();
+    const token = getAccessToken();
+    if (token) {
+      headers.set("Authorization", `Bearer ${token}`);
+    }
+    return fetch(`${API_BASE}/knowledge-documents/${documentId}/content`, {
+      credentials: "include",
+      headers
+    });
+  };
+
+  let response = await request();
+  if (response.status === 401 && (await restoreSession())) {
+    response = await request();
+  }
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => null);
+    throw new Error(error?.message ?? `请求失败（HTTP ${response.status}），请稍后重试`);
+  }
+  return response.blob();
+}
+
 /* ---------- 检索配置 / RAG 测试 / 切片（对齐 KnowledgeRetrievalConfig* / KnowledgeRetrievalTestResponse / KnowledgeChunk*） ---------- */
 
 export interface KnowledgeRetrievalConfig {

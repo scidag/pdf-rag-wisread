@@ -69,6 +69,9 @@ public class KnowledgeDocumentProcessingServiceImpl implements KnowledgeDocument
     @Value("${wisread.document.run-timeout-ms:600000}")
     private long runTimeoutMs;
 
+    // UPLOADED 停留阈值：超过该时长仍未被异步任务抢占，视为触发丢失（竞态/重启/拒绝），由恢复任务重新投递
+    private static final Duration UPLOADED_STUCK_THRESHOLD = Duration.ofMinutes(2);
+
     public KnowledgeDocumentProcessingServiceImpl(
             KnowledgeDocumentRepository knowledgeDocumentRepository,
             KnowledgeVectorIndexingService knowledgeVectorIndexingService,
@@ -248,6 +251,16 @@ public class KnowledgeDocumentProcessingServiceImpl implements KnowledgeDocument
             knowledgeBaseService.refreshDerivedStatus(document.getKnowledgeBaseId());
             log.warn("知识库文档卡死恢复：超时自动重试 documentId={} status=PROCESSING→UPLOADED",
                     document.getId());
+            processInternal(document.getId(), document.getUserId());
+        }
+
+        // 兜底：回收"已上传"超过阈值仍未被处理的文档（异步触发丢失场景：
+        // 事务提交前竞态、应用重启、线程池拒绝），重新投递；CAS 抢占保证并发安全
+        List<KnowledgeDocument> stuckUploaded = knowledgeDocumentRepository.findByStatusAndUpdatedAtBefore(
+                KnowledgeDocument.STATUS_UPLOADED, Instant.now().minus(UPLOADED_STUCK_THRESHOLD));
+        for (KnowledgeDocument document : stuckUploaded) {
+            log.warn("知识库文档卡死恢复：UPLOADED 超时未被处理，重新投递 documentId={} userId={}",
+                    document.getId(), document.getUserId());
             processInternal(document.getId(), document.getUserId());
         }
     }

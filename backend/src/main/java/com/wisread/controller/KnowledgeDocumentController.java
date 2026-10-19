@@ -5,6 +5,7 @@ import com.wisread.dto.KnowledgeDocumentBatchItemResponse;
 import com.wisread.dto.KnowledgeDocumentResponse;
 import com.wisread.entity.KnowledgeDocument;
 import com.wisread.service.KnowledgeDocumentService;
+import com.wisread.model.DocumentType;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
@@ -97,6 +98,25 @@ public class KnowledgeDocumentController {
     ) {
         Long userId = (Long) authentication.getPrincipal();
         return ResponseEntity.ok(knowledgeDocumentService.get(userId, id));
+    }
+
+    /**
+     * GET /api/v1/knowledge-documents/{id}/content：文档原始内容预览接口。
+     * 校验归属后返回文件字节流，Content-Type 按文档类型设置，前端内联渲染预览。
+     */
+    @GetMapping("/api/v1/knowledge-documents/{id}/content")
+    public ResponseEntity<byte[]> content(
+            @PathVariable Long id,
+            Authentication authentication
+    ) {
+        Long userId = (Long) authentication.getPrincipal();
+        DocumentType documentType = DocumentType.fromValueOrDefault(
+                knowledgeDocumentService.get(userId, id).fileType()
+        );
+        log.info("预览知识库文档 userId={} documentId={} contentType={}", userId, id, documentType.contentType());
+        return ResponseEntity.ok()
+                .contentType(MediaType.parseMediaType(documentType.contentType()))
+                .body(knowledgeDocumentService.getContent(userId, id));
     }
 
     /** POST /api/v1/knowledge-documents/{id}/reparse：重新解析知识库文档。

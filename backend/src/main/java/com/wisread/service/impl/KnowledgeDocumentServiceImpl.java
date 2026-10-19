@@ -134,14 +134,9 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
         // 立即刷新派生状态：存在 UPLOADED 文档时知识库状态派生为 PROCESSING
         knowledgeBaseService.refreshDerivedStatus(kbId);
 
-        // 同步触发异步处理（@Async 在线程池后台执行）；
-        // 提交失败时保持 UPLOADED，由定时恢复任务兜底，避免任务静默丢失
-        try {
-            knowledgeDocumentProcessingService.processDocument(document.getId(), userId);
-        } catch (RejectedExecutionException exception) {
-            log.warn("知识库文档 {} 处理任务提交被拒绝，保持 UPLOADED 等待定时恢复重试",
-                    document.getId(), exception);
-        }
+        // 事务提交后再触发异步处理：若在事务内直接触发，异步线程可能先于提交执行
+        // findById 读不到未提交的文档行而静默退出，导致文档永久停留在 UPLOADED
+        triggerProcessingAfterCommit(document.getId(), userId);
         return document;
     }
 
@@ -212,12 +207,48 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
         document.setErrorMessage(null);
         knowledgeDocumentRepository.updateById(document);
         knowledgeBaseService.refreshDerivedStatus(document.getKnowledgeBaseId());
+        // 与 upload 一致：事务提交后再触发，避免异步线程读不到未提交的状态复位
+        triggerProcessingAfterCommit(documentId, userId);
+    }
+
+    /**
+     * 在当前事务提交后再触发异步处理。
+     * 为什么：upload/reparse 均为 @Transactional，若在事务内直接调用 @Async 方法，
+     * 异步线程可能在提交前执行 findById 而读不到行（静默放弃），文档将永久停留在 UPLOADED；
+     * 无事务上下文时（如批量上传内部调用，self-invocation 事务不生效）直接提交。
+     */
+    private void triggerProcessingAfterCommit(Long documentId, Long userId) {
+        if (org.springframework.transaction.support.TransactionSynchronizationManager
+                .isSynchronizationActive()) {
+            org.springframework.transaction.support.TransactionSynchronizationManager
+                    .registerSynchronization(new org.springframework.transaction.support.TransactionSynchronization() {
+                        @Override
+                        public void afterCommit() {
+                            submitProcessing(documentId, userId);
+                        }
+                    });
+        } else {
+            submitProcessing(documentId, userId);
+        }
+    }
+
+    /**
+     * 提交异步处理任务；线程池满被拒绝时保持 UPLOADED，由定时恢复任务兜底重试。
+     */
+    private void submitProcessing(Long documentId, Long userId) {
         try {
             knowledgeDocumentProcessingService.processDocument(documentId, userId);
         } catch (RejectedExecutionException exception) {
-            log.warn("知识库文档 {} 重新解析任务提交被拒绝，保持 UPLOADED 等待定时恢复重试",
+            log.warn("知识库文档 {} 处理任务提交被拒绝，保持 UPLOADED 等待定时恢复重试",
                     documentId, exception);
         }
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public byte[] getContent(Long userId, Long documentId) {
+        // 归属校验后从对象存储读取原始字节，供前端内联预览
+        return minioStorageService.getObject(findOwnedDocument(userId, documentId).getFileKey());
     }
 
     /**
