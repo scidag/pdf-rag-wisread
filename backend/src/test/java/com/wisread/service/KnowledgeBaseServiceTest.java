@@ -105,7 +105,7 @@ class KnowledgeBaseServiceTest {
                 .thenReturn(Optional.of(knowledgeBase));
 
         KnowledgeBase updated = knowledgeBaseService.update(
-                1L, 7L, new KnowledgeBaseUpdateRequest("  新名称  ", null, 5, null, null, 2));
+                1L, 7L, new KnowledgeBaseUpdateRequest("  新名称  ", null, 5, null, null, 2, null));
 
         assertThat(updated.getName()).isEqualTo("新名称");
         assertThat(updated.getDescription()).isEqualTo("原描述");

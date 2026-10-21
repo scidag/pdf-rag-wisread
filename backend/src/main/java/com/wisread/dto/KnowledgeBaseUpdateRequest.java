@@ -28,6 +28,8 @@ public record KnowledgeBaseUpdateRequest(
         Boolean rerankEnabled,
         // 重排后保留的片段数
         @Min(value = 1, message = "rerankK 最小为 1")
-        Integer rerankK
+        Integer rerankK,
+        // Agentic RAG 补检索开关；仅请求字段非空才覆盖（不携带则保持原值）
+        Boolean agentEnabled
 ) {
 }

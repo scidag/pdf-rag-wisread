@@ -46,6 +46,10 @@ public class KnowledgeBase {
 
     private Integer rerankK = 3; // 重排后保留的片段数
 
+    private Boolean agentEnabled = false; // Agentic RAG 补检索开关（库级灰度位，默认关闭，每请求从数据库读取即时生效）
+
+    private Integer maxIterations; // Agent 最大检索轮次上限（本期只建不用，阶段 2 预留，只读透出）
+
     @TableField(fill = FieldFill.INSERT)
     private Instant createdAt; // 创建时间，插入时自动填充
 
@@ -124,6 +128,22 @@ public class KnowledgeBase {
 
     public void setRerankK(Integer rerankK) {
         this.rerankK = rerankK;
+    }
+
+    public Boolean getAgentEnabled() {
+        return agentEnabled;
+    }
+
+    public void setAgentEnabled(Boolean agentEnabled) {
+        this.agentEnabled = agentEnabled;
+    }
+
+    public Integer getMaxIterations() {
+        return maxIterations;
+    }
+
+    public void setMaxIterations(Integer maxIterations) {
+        this.maxIterations = maxIterations;
     }
 
     public Instant getCreatedAt() {

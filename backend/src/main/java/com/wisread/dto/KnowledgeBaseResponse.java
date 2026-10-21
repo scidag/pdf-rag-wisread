@@ -25,6 +25,10 @@ public record KnowledgeBaseResponse(
         Boolean rerankEnabled,
         // 重排后保留的片段数
         Integer rerankK,
+        // Agentic RAG 补检索开关（库级）
+        Boolean agentEnabled,
+        // Agent 最大检索轮次上限（本期只读透出，阶段 2 启用）
+        Integer maxIterations,
         // 知识库下文档数量
         long documentCount,
         // 知识库下分块（chunk）数量

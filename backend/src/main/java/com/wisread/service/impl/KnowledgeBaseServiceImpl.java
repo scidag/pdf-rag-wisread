@@ -107,6 +107,10 @@ public class KnowledgeBaseServiceImpl implements KnowledgeBaseService {
         if (request.rerankK() != null) {
             knowledgeBase.setRerankK(request.rerankK());
         }
+        // agent 开关防覆盖：仅请求显式携带（非空）时才更新，不携带则保持原值
+        if (request.agentEnabled() != null) {
+            knowledgeBase.setAgentEnabled(request.agentEnabled());
+        }
         knowledgeBaseRepository.updateById(knowledgeBase);
         return knowledgeBase;
     }

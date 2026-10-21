@@ -292,6 +292,8 @@ public class KnowledgeBaseController {
                 knowledgeBase.getSimilarityThreshold(),
                 knowledgeBase.getRerankEnabled(),
                 knowledgeBase.getRerankK(),
+                knowledgeBase.getAgentEnabled(),
+                knowledgeBase.getMaxIterations(),
                 documentCount,
                 chunkCount,
                 knowledgeBase.getCreatedAt(),
