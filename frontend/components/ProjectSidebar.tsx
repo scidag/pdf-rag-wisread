@@ -15,6 +15,7 @@ import { formatDocumentCount } from "@/lib/document-format";
 import type { Conversation, Document, Project, User } from "@/lib/types";
 import LogoMark from "./LogoMark";
 import StatusBadge from "./StatusBadge";
+import DocumentPreview from "./DocumentPreview";
 
 interface ProjectSidebarProps {
   user: User;
@@ -48,15 +49,12 @@ export default function ProjectSidebar({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [preview, setPreview] = useState<{
     document: Document;
-    url: string;
+    blob: Blob;
   } | null>(null);
   const [previewingId, setPreviewingId] = useState<number | null>(null);
   const [previewError, setPreviewError] = useState<string | null>(null);
 
   function closePreview() {
-    if (preview) {
-      URL.revokeObjectURL(preview.url);
-    }
     setPreview(null);
   }
 
@@ -65,7 +63,7 @@ export default function ProjectSidebar({
     setPreviewError(null);
     try {
       const blob = await getDocumentContent(document.id);
-      setPreview({ document, url: URL.createObjectURL(blob) });
+      setPreview({ document, blob });
     } catch (err) {
       setPreviewError(
         err instanceof Error ? err.message : "预览失败，请稍后重试"
@@ -263,35 +261,12 @@ export default function ProjectSidebar({
         </div>
       </aside>
       {preview && (
-        <div
-          role="dialog"
-          aria-modal="true"
-          aria-label={`预览 ${preview.document.filename}`}
-          className="fixed inset-0 z-50 flex flex-col bg-black/75 p-[clamp(8px,2vw,24px)]"
-        >
-          <div className="flex h-12 shrink-0 items-center gap-3 rounded-t-xl border border-b-0 border-[rgba(255,255,255,0.1)] bg-[rgba(8,16,30,0.98)] px-4">
-            <FileText className="h-4 w-4 shrink-0 text-[rgba(130,185,255,0.9)]" />
-            <span
-              className="truncate text-[0.8rem] font-semibold text-[rgba(220,235,255,0.92)]"
-              title={preview.document.filename}
-            >
-              {preview.document.filename}
-            </span>
-            <button
-              type="button"
-              onClick={closePreview}
-              aria-label="关闭预览"
-              className="ml-auto flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-[rgba(180,205,240,0.62)] transition hover:bg-[rgba(255,255,255,0.07)] hover:text-[rgba(230,240,255,0.95)]"
-            >
-              <X className="h-4 w-4" />
-            </button>
-          </div>
-          <iframe
-            title={`${preview.document.filename} 预览`}
-            src={preview.url}
-            className="min-h-0 w-full flex-1 rounded-b-xl border border-[rgba(255,255,255,0.1)] bg-white"
-          />
-        </div>
+        <DocumentPreview
+          filename={preview.document.filename}
+          fileType={preview.document.fileType}
+          blob={preview.blob}
+          onClose={closePreview}
+        />
       )}
     </>
   );
