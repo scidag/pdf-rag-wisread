@@ -16,6 +16,7 @@ frontend/dist/
 # Env
 .env
 deploy/.env
+backend/src/main/resources/application-prod.yml
 
 # OS
 .DS_Store
@@ -23,3 +24,28 @@ Thumbs.db
 
 # Separate cloned prototypes
 prototypes/
+.claude
+.cursor
+.gemini
+.kiro
+.tmp-debug/
+.docs/
+.trae/
+# Current local workspace artifacts
+.codegraph/
+.mcp.json
+AGENT.md
+AGENTS.md
+GEMINI.md
+opencode.jsonc
+task.md
+docs/acceptance/ragas-eval-set.jsonl
+docs/memory/
+docs/mvp1/
+/test/
+/testRAG/
+.images/
+
+# Runtime logs
+backend/logs/
+deploy/logs/
