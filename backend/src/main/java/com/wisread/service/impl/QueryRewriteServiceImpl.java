@@ -1,9 +1,12 @@
 package com.wisread.service.impl;
 
+import com.wisread.model.RetryRewriteResult;
 import com.wisread.service.QueryRewriteService;
 import com.wisread.service.TokenCounter;
 import com.wisread.service.UsageLogService;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.ai.chat.messages.SystemMessage;
 import org.springframework.ai.chat.messages.UserMessage;
 import org.springframework.ai.chat.model.ChatModel;
@@ -27,6 +30,8 @@ import java.util.stream.Collectors;
  */
 @Service
 public class QueryRewriteServiceImpl implements QueryRewriteService {
+
+    private static final Logger log = LoggerFactory.getLogger(QueryRewriteServiceImpl.class);
 
     private final ChatModel chatModel;
     private final TokenCounter tokenCounter;
@@ -85,5 +90,46 @@ public class QueryRewriteServiceImpl implements QueryRewriteService {
 
     private boolean containsPronoun(String question) {
         return question.matches(".*(它|他|她|这个|那个|这些|那些|上述|上面|以上).*");
+    }
+
+    /**
+     * 补检索改写（Agentic RAG 阶段 1，spec 4.2.5）。
+     *
+     * <p>做什么：对首轮改写后的独立问题换一个检索角度再生成一个检索表达。
+     * 为什么：首轮命中不足时，换检索角度可能召回新候选；结果用状态机表达，
+     * 失败/无效绝不回退原问题重查（相同查询只是重复付费）。
+     */
+    @Override
+    public RetryRewriteResult rewriteForRetry(String question, Long userId) {
+        SystemMessage system = new SystemMessage(
+                "针对下面的问题换一个检索角度生成检索词。"
+                        + "必须保留原问题的关键实体、时间范围、版本号与限定条件，"
+                        + "不得改变原问题的语义目标，只换检索角度。"
+                        + "只输出一个检索表达，不回答问题。"
+        );
+        UserMessage user = new UserMessage(question);
+        String output;
+        try {
+            output = chatModel.call(new Prompt(List.of(system, user)))
+                    .getResult()
+                    .getOutput()
+                    .getText();
+        } catch (Exception e) {
+            // LLM 调用未完成：不计量，直接结束补检（PASSTHROUGH）
+            log.error("补检改写 LLM 调用失败 userId={}", userId, e);
+            return RetryRewriteResult.of(RetryRewriteResult.Type.PASSTHROUGH);
+        }
+        // 调用已完成即计量（含结果判 INVALID 的场景），与 rewrite() 同一模式
+        usageLogService.log(userId, chatModelName, tokenCounter.count(question), tokenCounter.count(output));
+        String trimmed = output == null ? null : output.trim();
+        if (trimmed == null || trimmed.isEmpty() || trimmed.equals(question)) {
+            // 无效输出：调用已计量，但不再执行无意义的相同检索
+            log.info("补检改写结果无效，结束补检 userId={} type=INVALID", userId);
+            return RetryRewriteResult.of(RetryRewriteResult.Type.INVALID);
+        }
+        if (log.isDebugEnabled()) {
+            log.debug("补检改写完成 userId={} before={} after={}", userId, question, trimmed);
+        }
+        return RetryRewriteResult.rewritten(trimmed);
     }
 }

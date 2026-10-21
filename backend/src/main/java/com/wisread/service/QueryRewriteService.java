@@ -1,6 +1,7 @@
 package com.wisread.service;
 
 import com.wisread.entity.Message;
+import com.wisread.model.RetryRewriteResult;
 
 import java.util.List;
 
@@ -22,4 +23,21 @@ public interface QueryRewriteService {
      * @return 改写后的独立完整问题（无历史时返回原问题）
      */
     String rewrite(String question, List<Message> history, Long userId);
+
+    /**
+     * 补检索改写（Agentic RAG 阶段 1，spec 4.2.5）：为"补检索"换一个检索角度生成新检索词。
+     *
+     * <p>输入是首轮改写后的独立问题（已含指代消解、自包含），刻意不带历史——
+     * 补检索必须与首轮语义同源，勿改为用户原始问题。
+     *
+     * <p>结果状态机：REWRITTEN（有效新检索词，继续补检）/ PASSTHROUGH（LLM 失败，直接结束补检）
+     * / INVALID（空白或与输入相同，直接结束补检，不重复执行相同查询）。
+     *
+     * <p>计量边界：调用完成即计量（含结果判 INVALID 的场景）；调用异常未完成则不计量。
+     *
+     * @param question 首轮改写后的独立问题
+     * @param userId   当前用户 ID（用于用量记录）
+     * @return 改写结果状态机
+     */
+    RetryRewriteResult rewriteForRetry(String question, Long userId);
 }
