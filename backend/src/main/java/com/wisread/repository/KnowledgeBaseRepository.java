@@ -137,4 +137,19 @@ public interface KnowledgeBaseRepository extends BaseRepository<KnowledgeBase> {
             GROUP BY kd.status
             """)
     List<Map<String, Object>> countDocumentStatusByKnowledgeBaseId(@Param("knowledgeBaseId") Long knowledgeBaseId);
+
+    /**
+     * 统计指定知识库下已索引（所属文档状态为 INDEXED）的 chunk 总数，
+     * 供 Agentic RAG 充分性评估器的小库豁免判定使用（spec 4.2.4）。
+     * 仅评估器实际运行时调用（agent 开关关闭时不产生该查询）。
+     *
+     * @param knowledgeBaseId 知识库 id
+     * @return 该知识库下已索引 chunk 总数
+     */
+    @Select("""
+            SELECT COUNT(*) FROM knowledge_chunks kc
+            JOIN knowledge_documents kd ON kd.id = kc.document_id
+            WHERE kc.knowledge_base_id = #{knowledgeBaseId} AND kd.status = 'INDEXED'
+            """)
+    long countIndexedChunksByKnowledgeBaseId(@Param("knowledgeBaseId") Long knowledgeBaseId);
 }
