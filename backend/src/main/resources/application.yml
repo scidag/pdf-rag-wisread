@@ -108,3 +108,13 @@ wisread:
     access-key: ${MINIO_ROOT_USER:wisread}
     secret-key: ${MINIO_ROOT_PASSWORD:wisread123}
     bucket: ${MINIO_BUCKET:wisread-documents}
+  knowledge:
+    agent:
+      enabled: true            # Agentic RAG 全局总闸（启动期生效，发版级保险丝）
+      retry-budget-ms: 8000    # 补检统一 deadline（毫秒）
+      retry-concurrency: 8     # 补检独立并发护栏
+      fallback-top-k: 10       # 单轮召回上限的回退默认值（库未配置 topK 时）
+      grader:
+        low-hits-min: 3        # LOW_HITS 下限 L 的上限之一
+        weak-top-margin: 0.05  # 弱命中余量
+        weak-top-absolute: 0.5 # 未配置阈值时的绝对兜底线
