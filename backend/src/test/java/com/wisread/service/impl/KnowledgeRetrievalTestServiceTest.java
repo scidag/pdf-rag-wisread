@@ -5,11 +5,12 @@ import com.wisread.dto.KnowledgeRetrievalTestResponse;
 import com.wisread.dto.SourceResponse;
 import com.wisread.entity.KnowledgeBase;
 import com.wisread.exception.ApiException;
-import com.wisread.model.KnowledgeChunkSearchResult;
+import com.wisread.model.ChunkSearchResult;
+import com.wisread.model.RetrievalOutcome;
 import com.wisread.service.CitationParsingService;
 import com.wisread.service.EmbeddingService;
 import com.wisread.service.KnowledgeBaseService;
-import com.wisread.service.KnowledgeVectorIndexingService;
+import com.wisread.service.KnowledgeRagOrchestrator;
 import com.wisread.service.QueryRewriteService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -28,7 +29,7 @@ import java.util.List;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.anyFloat;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
@@ -38,8 +39,10 @@ import static org.mockito.Mockito.when;
 
 /**
  * 知识库检索测试端点（POST /retrieval-test）服务层单元测试（Mockito，不启动 Spring）：
- * 验证 usedConfig 与实际召回一致（topK/阈值/截断）、无关问题拒答且不调答案生成、
+ * 验证召回走 Agentic RAG 编排器（agent 关闭时透传单轮结果）、无关问题拒答且不调答案生成、
  * 各阶段耗时字段存在、越权 403 与两个知识库同问题互不影响。
+ * 阈值过滤/rerankK 截断的检索口径行为已下沉到编排器 + KnowledgeRetrievalPipeline
+ * （见 KnowledgeRagOrchestratorTest / CandidateMergeTest），本测试聚焦端点层接线与下游行为。
  */
 @ExtendWith(MockitoExtension.class)
 class KnowledgeRetrievalTestServiceTest {
@@ -48,7 +51,7 @@ class KnowledgeRetrievalTestServiceTest {
     private KnowledgeBaseService knowledgeBaseService;
 
     @Mock
-    private KnowledgeVectorIndexingService knowledgeVectorIndexingService;
+    private KnowledgeRagOrchestrator knowledgeRagOrchestrator;
 
     @Mock
     private EmbeddingService embeddingService;
@@ -72,13 +75,15 @@ class KnowledgeRetrievalTestServiceTest {
     void setUp() {
         testService = new KnowledgeRetrievalTestServiceImpl(
                 knowledgeBaseService,
-                knowledgeVectorIndexingService,
+                knowledgeRagOrchestrator,
                 embeddingService,
                 queryRewriteService,
                 citationParsingService,
                 chatModel
         );
     }
+
+    // ===== 测试数据构造 =====
 
     private KnowledgeBase kb(Long id, Integer topK, Double threshold, Boolean rerankEnabled, Integer rerankK) {
         KnowledgeBase knowledgeBase = new KnowledgeBase();
@@ -88,12 +93,17 @@ class KnowledgeRetrievalTestServiceTest {
         knowledgeBase.setSimilarityThreshold(threshold);
         knowledgeBase.setRerankEnabled(rerankEnabled);
         knowledgeBase.setRerankK(rerankK);
+        knowledgeBase.setAgentEnabled(false);
         return knowledgeBase;
     }
 
-    private KnowledgeChunkSearchResult hit(long chunkId, double distance) {
-        return new KnowledgeChunkSearchResult(
-                chunkId, 601L, "kb文档.pdf", "知识库片段" + chunkId, 2, 3, "页", distance);
+    private ChunkSearchResult hit(long chunkId, double distance) {
+        return new ChunkSearchResult(chunkId, 601L, "kb文档.pdf", "知识库片段" + chunkId, 2, 3, "页", distance);
+    }
+
+    // 编排器透传单轮结果（agent 关闭时与现状一致的形状）
+    private RetrievalOutcome singleRoundOutcome(List<ChunkSearchResult> candidates) {
+        return new RetrievalOutcome(candidates, 1, null, null, List.of());
     }
 
     private void stubRewritePassthrough() {
@@ -115,14 +125,15 @@ class KnowledgeRetrievalTestServiceTest {
 
     @Test
     void testReturnsAllStagesAndUsedConfigMatchesRecall() {
-        // topK=5 召回上限；threshold=0.8 → 距离阈值 0.2 过滤掉 0.3；rerankK=2 再截断到前 2 条
+        // usedConfig 快照与库配置一致；recall 为编排器最终候选（透传）
         when(knowledgeBaseService.findOwnedKnowledgeBase(USER_ID, KB_ID))
                 .thenReturn(kb(KB_ID, 5, 0.8, true, 2));
         stubRewritePassthrough();
         stubEmbedding();
         stubAnswer("依据 [1] 的回答");
-        when(knowledgeVectorIndexingService.searchKnowledgeChunks(eq(USER_ID), eq(KB_ID), any(), eq(5)))
-                .thenReturn(List.of(hit(1L, 0.1), hit(2L, 0.15), hit(3L, 0.18), hit(4L, 0.3)));
+        when(knowledgeRagOrchestrator.orchestrate(eq(QUESTION), any(float[].class),
+                any(KnowledgeBase.class), eq(USER_ID)))
+                .thenReturn(singleRoundOutcome(List.of(hit(1L, 0.1), hit(2L, 0.15))));
 
         KnowledgeRetrievalTestResponse response =
                 testService.test(USER_ID, KB_ID, new KnowledgeRetrievalTestRequest(QUESTION));
@@ -133,14 +144,13 @@ class KnowledgeRetrievalTestServiceTest {
         assertThat(response.rewrite().rewritten()).isFalse();
         assertThat(response.rewrite().mode()).isEqualTo("passthrough");
 
-        // recall 阶段：阈值过滤 + rerankK 截断后只保留前 2 条（与 usedConfig 严格一致）
+        // usedConfig 快照：与库配置严格一致（过滤口径行为已下沉编排器）
         assertThat(response.usedConfig().topK()).isEqualTo(5);
         assertThat(response.usedConfig().similarityThreshold()).isEqualTo(0.8);
         assertThat(response.usedConfig().rerankEnabled()).isTrue();
         assertThat(response.usedConfig().rerankK()).isEqualTo(2);
         assertThat(response.recall()).extracting(KnowledgeRetrievalTestResponse.RecallItem::chunkId)
                 .containsExactly(1L, 2L);
-        assertThat(response.recall()).allMatch(item -> item.distance() <= 0.2);
         assertThat(response.recall().get(0).similarity()).isEqualTo(1 - 0.1);
         assertThat(response.recall().get(0).filename()).isEqualTo("kb文档.pdf");
         assertThat(response.recall().get(0).snippet()).isNotBlank();
@@ -156,10 +166,6 @@ class KnowledgeRetrievalTestServiceTest {
         assertThat(response.citations()).hasSize(1);
 
         // timings：四个阶段字段全部存在且非负
-        assertThat(response.timings().rewriteMs()).isNotNull();
-        assertThat(response.timings().recallMs()).isNotNull();
-        assertThat(response.timings().rerankMs()).isNotNull();
-        assertThat(response.timings().answerMs()).isNotNull();
         assertThat(response.timings().rewriteMs()).isGreaterThanOrEqualTo(0);
         assertThat(response.timings().recallMs()).isGreaterThanOrEqualTo(0);
         assertThat(response.timings().rerankMs()).isGreaterThanOrEqualTo(0);
@@ -174,8 +180,9 @@ class KnowledgeRetrievalTestServiceTest {
                 .thenReturn(kb(KB_ID, 5, 0.8, true, 2));
         stubRewritePassthrough();
         stubEmbedding();
-        when(knowledgeVectorIndexingService.searchKnowledgeChunks(eq(USER_ID), eq(KB_ID), any(), eq(5)))
-                .thenReturn(List.of());
+        when(knowledgeRagOrchestrator.orchestrate(eq(QUESTION), any(float[].class),
+                any(KnowledgeBase.class), eq(USER_ID)))
+                .thenReturn(singleRoundOutcome(List.of()));
 
         KnowledgeRetrievalTestResponse response =
                 testService.test(USER_ID, KB_ID, new KnowledgeRetrievalTestRequest(QUESTION));
@@ -192,13 +199,14 @@ class KnowledgeRetrievalTestServiceTest {
 
     @Test
     void testRejectsWhenAllHitsBelowThreshold() {
-        // threshold=0.8（距离阈值 0.2），全部命中 0.5/0.9 超阈值 → 拒答
+        // 全部命中超阈值时编排器输出空候选 → 端点拒答（过滤口径行为在编排器内部，已由其专属测试覆盖）
         when(knowledgeBaseService.findOwnedKnowledgeBase(USER_ID, KB_ID))
                 .thenReturn(kb(KB_ID, 5, 0.8, false, null));
         stubRewritePassthrough();
         stubEmbedding();
-        when(knowledgeVectorIndexingService.searchKnowledgeChunks(eq(USER_ID), eq(KB_ID), any(), eq(5)))
-                .thenReturn(List.of(hit(1L, 0.5), hit(2L, 0.9)));
+        when(knowledgeRagOrchestrator.orchestrate(eq(QUESTION), any(float[].class),
+                any(KnowledgeBase.class), eq(USER_ID)))
+                .thenReturn(singleRoundOutcome(List.of()));
 
         KnowledgeRetrievalTestResponse response =
                 testService.test(USER_ID, KB_ID, new KnowledgeRetrievalTestRequest(QUESTION));
@@ -224,8 +232,7 @@ class KnowledgeRetrievalTestServiceTest {
 
         // 越权时不做任何检索与生成
         verify(embeddingService, never()).embed(anyList(), any());
-        verify(knowledgeVectorIndexingService, never())
-                .searchKnowledgeChunks(any(), any(), any(), anyInt());
+        verify(knowledgeRagOrchestrator, never()).orchestrate(anyString(), any(float[].class), any(), any());
         verify(chatModel, never()).call(any(Prompt.class));
     }
 
@@ -243,32 +250,30 @@ class KnowledgeRetrievalTestServiceTest {
 
     @Test
     void testSameQuestionOnTwoKnowledgeBasesDoNotInterfere() {
-        // 库 A：topK=3、阈值 0.5（距离阈值 0.5）、关闭 rerank
+        // 库 A：topK=3、阈值 0.5、关闭 rerank；库 B：topK=20、阈值 0.9、关闭 rerank
         KnowledgeBase kbA = kb(KB_ID, 3, 0.5, false, null);
-        // 库 B：topK=20、阈值 0.9（距离阈值 0.1）、关闭 rerank
         KnowledgeBase kbB = kb(100L, 20, 0.9, false, null);
         when(knowledgeBaseService.findOwnedKnowledgeBase(USER_ID, KB_ID)).thenReturn(kbA);
         when(knowledgeBaseService.findOwnedKnowledgeBase(USER_ID, 100L)).thenReturn(kbB);
         stubRewritePassthrough();
         stubEmbedding();
         stubAnswer("依据 [1] 的回答");
-        // 检索 mock 按 kbId 区分：各自返回各自的命中，互不可见
-        when(knowledgeVectorIndexingService.searchKnowledgeChunks(eq(USER_ID), eq(KB_ID), any(), eq(3)))
-                .thenReturn(List.of(hit(11L, 0.3), hit(12L, 0.8)));
-        when(knowledgeVectorIndexingService.searchKnowledgeChunks(eq(USER_ID), eq(100L), any(), eq(20)))
-                .thenReturn(List.of(hit(21L, 0.05)));
+        // 编排器 mock 按传入知识库区分：各自返回各自的候选，互不可见
+        when(knowledgeRagOrchestrator.orchestrate(eq(QUESTION), any(float[].class), eq(kbA), eq(USER_ID)))
+                .thenReturn(singleRoundOutcome(List.of(hit(11L, 0.3))));
+        when(knowledgeRagOrchestrator.orchestrate(eq(QUESTION), any(float[].class), eq(kbB), eq(USER_ID)))
+                .thenReturn(singleRoundOutcome(List.of(hit(21L, 0.05))));
 
         KnowledgeRetrievalTestResponse responseA = testService.test(
                 USER_ID, KB_ID, new KnowledgeRetrievalTestRequest(QUESTION));
         KnowledgeRetrievalTestResponse responseB = testService.test(
                 USER_ID, 100L, new KnowledgeRetrievalTestRequest(QUESTION));
 
-        // 库 A：召回上限 3、阈值过滤保留 0.3、丢弃 0.8
+        // 库 A 与库 B 的召回互不影响
         assertThat(responseA.usedConfig().topK()).isEqualTo(3);
         assertThat(responseA.usedConfig().similarityThreshold()).isEqualTo(0.5);
         assertThat(responseA.recall()).extracting(KnowledgeRetrievalTestResponse.RecallItem::chunkId)
                 .containsExactly(11L);
-        // 库 B：召回上限 20、阈值 0.9 保留 0.05；与库 A 的命中互不影响
         assertThat(responseB.usedConfig().topK()).isEqualTo(20);
         assertThat(responseB.usedConfig().similarityThreshold()).isEqualTo(0.9);
         assertThat(responseB.recall()).extracting(KnowledgeRetrievalTestResponse.RecallItem::chunkId)
@@ -279,20 +284,21 @@ class KnowledgeRetrievalTestServiceTest {
 
     @Test
     void testUsedConfigReflectsFallbackTopKWhenUnconfigured() {
-        // 库内 topK 未配置（null）→ 使用回退默认值 10，usedConfig 如实记录
+        // 库内 topK 未配置（null）→ usedConfig 记录回退默认值 10，编排器正常被调用
         when(knowledgeBaseService.findOwnedKnowledgeBase(USER_ID, KB_ID))
                 .thenReturn(kb(KB_ID, null, 0.65, false, null));
         stubRewritePassthrough();
         stubEmbedding();
         stubAnswer("依据 [1] 的回答");
-        when(knowledgeVectorIndexingService.searchKnowledgeChunks(eq(USER_ID), eq(KB_ID), any(), eq(10)))
-                .thenReturn(List.of(hit(1L, 0.1)));
+        when(knowledgeRagOrchestrator.orchestrate(eq(QUESTION), any(float[].class),
+                any(KnowledgeBase.class), eq(USER_ID)))
+                .thenReturn(singleRoundOutcome(List.of(hit(1L, 0.1))));
 
         KnowledgeRetrievalTestResponse response =
                 testService.test(USER_ID, KB_ID, new KnowledgeRetrievalTestRequest(QUESTION));
 
         assertThat(response.usedConfig().topK()).isEqualTo(10);
-        verify(knowledgeVectorIndexingService).searchKnowledgeChunks(
-                eq(USER_ID), eq(KB_ID), any(), eq(10));
+        verify(knowledgeRagOrchestrator).orchestrate(
+                eq(QUESTION), any(float[].class), any(KnowledgeBase.class), eq(USER_ID));
     }
 }

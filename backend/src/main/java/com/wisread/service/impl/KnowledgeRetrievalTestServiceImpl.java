@@ -6,12 +6,13 @@ import com.wisread.dto.SourceResponse;
 import com.wisread.entity.KnowledgeBase;
 import com.wisread.exception.ApiException;
 import com.wisread.model.ChunkSearchResult;
-import com.wisread.model.KnowledgeChunkSearchResult;
+import com.wisread.model.RetrievalIteration;
+import com.wisread.model.RetrievalOutcome;
 import com.wisread.service.CitationParsingService;
 import com.wisread.service.EmbeddingService;
 import com.wisread.service.KnowledgeBaseService;
+import com.wisread.service.KnowledgeRagOrchestrator;
 import com.wisread.service.KnowledgeRetrievalTestService;
-import com.wisread.service.KnowledgeVectorIndexingService;
 import com.wisread.service.QueryRewriteService;
 import org.springframework.ai.chat.messages.Message;
 import org.springframework.ai.chat.messages.SystemMessage;
@@ -31,8 +32,9 @@ import java.util.List;
  * <ol>
  *   <li>归属校验：仅知识库所有者可测（findOwnedKnowledgeBase，越权 403）；</li>
  *   <li>改写：复用现有 QueryRewriteService（无历史时其内部直接透传原问题，标注 passthrough）；</li>
- *   <li>召回：按库配置 topK 向量检索 + 相似度阈值过滤 + rerankK 截断，
- *       口径统一走 {@link KnowledgeRetrievalPipeline}，与 Chat 绑库问答严格一致；</li>
+ *   <li>召回：query embedding 后经 {@link KnowledgeRagOrchestrator} 编排检索
+ *       （agent 关闭时透传单轮结果），口径统一走 KnowledgeRetrievalPipeline，
+ *       与 Chat 绑库问答严格一致；</li>
  *   <li>重排：当前为占位实现（不接重排模型，仅距离排序 + 截断），响应中明确标注；</li>
  *   <li>答案：复用与问答链路同一 ChatModel 生成带编号引用的答案，
  *       引用经 CitationParsingService 校验；命中为空/全部低于阈值时拒答，不调用答案生成。</li>
@@ -54,7 +56,7 @@ public class KnowledgeRetrievalTestServiceImpl implements KnowledgeRetrievalTest
     private static final int SNIPPET_LENGTH = 120;
 
     private final KnowledgeBaseService knowledgeBaseService;
-    private final KnowledgeVectorIndexingService knowledgeVectorIndexingService;
+    private final KnowledgeRagOrchestrator knowledgeRagOrchestrator;
     private final EmbeddingService embeddingService;
     private final QueryRewriteService queryRewriteService;
     private final CitationParsingService citationParsingService;
@@ -62,14 +64,14 @@ public class KnowledgeRetrievalTestServiceImpl implements KnowledgeRetrievalTest
 
     public KnowledgeRetrievalTestServiceImpl(
             KnowledgeBaseService knowledgeBaseService,
-            KnowledgeVectorIndexingService knowledgeVectorIndexingService,
+            KnowledgeRagOrchestrator knowledgeRagOrchestrator,
             EmbeddingService embeddingService,
             QueryRewriteService queryRewriteService,
             CitationParsingService citationParsingService,
             ChatModel chatModel
     ) {
         this.knowledgeBaseService = knowledgeBaseService;
-        this.knowledgeVectorIndexingService = knowledgeVectorIndexingService;
+        this.knowledgeRagOrchestrator = knowledgeRagOrchestrator;
         this.embeddingService = embeddingService;
         this.queryRewriteService = queryRewriteService;
         this.citationParsingService = citationParsingService;
@@ -98,14 +100,18 @@ public class KnowledgeRetrievalTestServiceImpl implements KnowledgeRetrievalTest
         boolean rewritten = !rewrittenQuestion.equals(question);
         long rewriteMs = elapsedMs(rewriteStart);
 
-        // 召回阶段：query embedding + 向量检索 + 阈值过滤 + rerankK 截断（与 Chat 绑库口径一致）
+        // 召回阶段：query embedding + 编排器统一检索（阈值过滤/rerankK 截断/补检均在其内部，
+        // 与 Chat 绑库口径一致）；recallMs 覆盖编排全程
         long recallStart = System.nanoTime();
         int topK = KnowledgeRetrievalPipeline.resolveTopK(knowledgeBase, FALLBACK_TOP_K);
         float[] queryEmbedding = embeddingService.embed(List.of(rewrittenQuestion), userId).get(0);
-        List<KnowledgeChunkSearchResult> hits = knowledgeVectorIndexingService.searchKnowledgeChunks(
-                userId, knowledgeBaseId, queryEmbedding, topK);
-        List<ChunkSearchResult> chunks = KnowledgeRetrievalPipeline.filterAndTruncate(hits, knowledgeBase);
+        RetrievalOutcome outcome = knowledgeRagOrchestrator.orchestrate(
+                rewrittenQuestion, queryEmbedding, knowledgeBase, userId);
+        List<ChunkSearchResult> chunks = outcome.candidates();
         long recallMs = elapsedMs(recallStart);
+        List<KnowledgeRetrievalTestResponse.IterationInfo> iterations = toIterationInfos(outcome.iterations());
+        KnowledgeRetrievalTestResponse.AgentInfo agentInfo = new KnowledgeRetrievalTestResponse.AgentInfo(
+                outcome.retryStatus(), outcome.degradationReason());
 
         // 重排阶段：占位实现，不重排，仅确认截断结果（保证口径与 Chat 一致）
         long rerankStart = System.nanoTime();
@@ -140,7 +146,9 @@ public class KnowledgeRetrievalTestServiceImpl implements KnowledgeRetrievalTest
                     true,
                     List.of(),
                     usedConfig,
-                    new KnowledgeRetrievalTestResponse.Timings(rewriteMs, recallMs, rerankMs, 0L)
+                    new KnowledgeRetrievalTestResponse.Timings(rewriteMs, recallMs, rerankMs, 0L),
+                    iterations,
+                    agentInfo
             );
         }
 
@@ -158,8 +166,28 @@ public class KnowledgeRetrievalTestServiceImpl implements KnowledgeRetrievalTest
                 false,
                 citations,
                 usedConfig,
-                new KnowledgeRetrievalTestResponse.Timings(rewriteMs, recallMs, rerankMs, answerMs)
+                new KnowledgeRetrievalTestResponse.Timings(rewriteMs, recallMs, rerankMs, answerMs),
+                iterations,
+                agentInfo
         );
+    }
+
+    /**
+     * 将编排器轮次明细映射为响应 DTO（同形字段逐一复制）。
+     */
+    private List<KnowledgeRetrievalTestResponse.IterationInfo> toIterationInfos(List<RetrievalIteration> iterations) {
+        List<KnowledgeRetrievalTestResponse.IterationInfo> items = new ArrayList<>(iterations.size());
+        for (RetrievalIteration iteration : iterations) {
+            items.add(new KnowledgeRetrievalTestResponse.IterationInfo(
+                    iteration.round(),
+                    iteration.query(),
+                    iteration.hits(),
+                    iteration.sufficient(),
+                    iteration.reason(),
+                    iteration.elapsedMs()
+            ));
+        }
+        return items;
     }
 
     /**

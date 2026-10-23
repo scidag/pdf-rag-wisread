@@ -23,7 +23,11 @@ public record KnowledgeRetrievalTestResponse(
         // 本次实际使用的检索配置快照
         UsedConfig usedConfig,
         // 各阶段耗时（毫秒）
-        Timings timings
+        Timings timings,
+        // Agentic RAG 各轮次明细（agent 关闭时为单轮，历史响应无该字段）
+        List<IterationInfo> iterations,
+        // Agentic RAG 补检状态摘要（agent 关闭时两字段均为 null）
+        AgentInfo agent
 ) {
 
     /**
@@ -107,6 +111,36 @@ public record KnowledgeRetrievalTestResponse(
             long rerankMs,
             // 答案生成阶段耗时
             long answerMs
+    ) {
+    }
+
+    /**
+     * Agentic RAG 一轮检索的明细（与编排器 RetrievalIteration 同形映射）。
+     */
+    public record IterationInfo(
+            // 轮次序号（从 1 开始）
+            int round,
+            // 本轮实际使用的检索查询
+            String query,
+            // 本轮命中条数
+            int hits,
+            // 本轮充分性评估结果
+            boolean sufficient,
+            // 评估原因（如 SUFFICIENT、LOW_HITS、budget_exceeded 等）
+            String reason,
+            // 本轮耗时（毫秒）
+            long elapsedMs
+    ) {
+    }
+
+    /**
+     * Agentic RAG 补检状态摘要。agent 关闭时两字段均为 null（保持单轮行为）。
+     */
+    public record AgentInfo(
+            // 补检状态：COMPLETED / SKIPPED，未触发补检时为 null
+            String retryStatus,
+            // 降级原因（如 concurrency_limit、budget_exceeded、grader_error），无降级时为 null
+            String degradationReason
     ) {
     }
 }
