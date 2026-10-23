@@ -5,7 +5,7 @@ import com.wisread.service.ChatLogService;
 import com.wisread.service.CitationParsingService;
 import com.wisread.service.EmbeddingService;
 import com.wisread.service.KnowledgeBaseService;
-import com.wisread.service.KnowledgeVectorIndexingService;
+import com.wisread.service.KnowledgeRagOrchestrator;
 import com.wisread.service.QueryRewriteService;
 import com.wisread.service.RerankService;
 import com.wisread.service.TokenCounter;
@@ -23,7 +23,6 @@ import com.wisread.entity.KnowledgeBase;
 import com.wisread.entity.UserMemory;
 import com.wisread.exception.ApiException;
 import com.wisread.model.ChunkSearchResult;
-import com.wisread.model.KnowledgeChunkSearchResult;
 import com.wisread.repository.AnswerSourceRepository;
 import com.wisread.repository.ConversationRepository;
 import com.wisread.repository.DocumentRepository;
@@ -69,7 +68,7 @@ import java.util.concurrent.Executor;
  *   <li>Rerank：对候选做重排（当前实现仅取前 3，见 RerankServiceImpl 说明）。</li>
  *   <li>距离阈值拒答：若最优块的距离 &gt; DISTANCE_THRESHOLD(0.65)，判定“文档无相关信息”，
  *       直接返回固定拒答文案，防止模型幻觉编造。</li>
- *   <li>构建 Prompt：将候选块按编号 [1]..[3] 注入系统提示，要求模型只能用编号引用，禁止编造编号。</li>
+ *   <li>构建 Prompt：将候选块按编号 [1]..[N]（N 为实际片段数）注入系统提示，要求模型只能用编号引用，禁止编造编号。</li>
  *   <li>流式生成：调用 ChatModel 流式接口，逐 token 通过 SSE 推送给前端。</li>
  *   <li>落库与引用：回答完成后，写入 assistant 消息，并把答案中解析出的引用来源写入 AnswerSource。</li>
  * </ol>
@@ -96,7 +95,7 @@ public class ChatServiceImpl implements ChatService {
     private final EmbeddingService embeddingService;
     private final VectorIndexingService vectorIndexingService;
     private final KnowledgeBaseService knowledgeBaseService;
-    private final KnowledgeVectorIndexingService knowledgeVectorIndexingService;
+    private final KnowledgeRagOrchestrator knowledgeRagOrchestrator;
     private final RerankService rerankService;
     private final QueryRewriteService queryRewriteService;
     private final CitationParsingService citationParsingService;
@@ -130,7 +129,7 @@ public class ChatServiceImpl implements ChatService {
             EmbeddingService embeddingService,
             VectorIndexingService vectorIndexingService,
             KnowledgeBaseService knowledgeBaseService,
-            KnowledgeVectorIndexingService knowledgeVectorIndexingService,
+            KnowledgeRagOrchestrator knowledgeRagOrchestrator,
             RerankService rerankService,
             QueryRewriteService queryRewriteService,
             CitationParsingService citationParsingService,
@@ -159,7 +158,7 @@ public class ChatServiceImpl implements ChatService {
         this.embeddingService = embeddingService;
         this.vectorIndexingService = vectorIndexingService;
         this.knowledgeBaseService = knowledgeBaseService;
-        this.knowledgeVectorIndexingService = knowledgeVectorIndexingService;
+        this.knowledgeRagOrchestrator = knowledgeRagOrchestrator;
         this.rerankService = rerankService;
         this.queryRewriteService = queryRewriteService;
         this.citationParsingService = citationParsingService;
@@ -259,7 +258,7 @@ public class ChatServiceImpl implements ChatService {
             // 未绑定时保持原有项目检索链路（向量召回 Top10 → 重排）不变
             List<ChunkSearchResult> chunks;
             if (conversation.getKnowledgeBaseId() != null) {
-                chunks = searchFromKnowledgeBase(conversation, queryEmbedding);
+                chunks = searchFromKnowledgeBase(conversation, query, queryEmbedding);
             } else {
                 // 向量召回 Top10 候选块：先广召回，再靠重排/阈值精筛，平衡召回率与精度
                 List<ChunkSearchResult> candidates = vectorIndexingService.searchWithContent(
@@ -384,24 +383,21 @@ public class ChatServiceImpl implements ChatService {
      * 知识库检索链路：会话绑定了独立知识库时的候选块获取。
      *
      * <p>做什么：先经 {@code findOwnedKnowledgeBase} 做归属校验（越权/不存在 403，
-     * ARCHIVED 归档库放行不拦，既有绑定会话可继续问答）；再按知识库配置的 topK 召回，
-     * 用配置的相似度阈值过滤（余弦距离 = 1 - 余弦相似度，distance &gt; 1 - threshold 丢弃）；
-     * rerank 开启时按 rerankK 截断（当前 rerank 为占位实现，不重排仅截断）。
-     * 过滤/截断口径统一收敛在 {@link KnowledgeRetrievalPipeline}，与 RAG 检索测试端点共用，防止口径漂移。
+     * ARCHIVED 归档库放行不拦，既有绑定会话可继续问答）；随后以
+     * {@link KnowledgeRagOrchestrator} 为唯一检索入口编排
+     * "检索 → 充分性评估 →（按需改写补检一次）→ 合并"（Agentic RAG 阶段 1）。
+     * agent 开关关闭或首轮判定充分时编排器透传单轮结果，行为与现状完全一致；
+     * 所有轮次召回与过滤/截断口径统一收敛在 {@link KnowledgeRetrievalPipeline}，
+     * 与 RAG 检索测试端点共用，防止口径漂移。
      * 为什么：知识库自带检索配置（topK/相似度阈值/重排开关），问答行为由库配置驱动，
      * 不再叠加项目链路的固定 0.65 距离阈值。
      */
-    private List<ChunkSearchResult> searchFromKnowledgeBase(Conversation conversation, float[] queryEmbedding) {
+    private List<ChunkSearchResult> searchFromKnowledgeBase(Conversation conversation, String query, float[] queryEmbedding) {
         Long userId = conversation.getUserId();
-        Long knowledgeBaseId = conversation.getKnowledgeBaseId();
-        KnowledgeBase knowledgeBase = knowledgeBaseService.findOwnedKnowledgeBase(userId, knowledgeBaseId);
-        List<KnowledgeChunkSearchResult> hits = knowledgeVectorIndexingService.searchKnowledgeChunks(
-                userId,
-                knowledgeBaseId,
-                queryEmbedding,
-                KnowledgeRetrievalPipeline.resolveTopK(knowledgeBase, topK)
-        );
-        return KnowledgeRetrievalPipeline.filterAndTruncate(hits, knowledgeBase);
+        KnowledgeBase knowledgeBase = knowledgeBaseService.findOwnedKnowledgeBase(userId, conversation.getKnowledgeBaseId());
+        // 入口不变式（spec 4.2.1）：query 与 queryEmbedding 是同一文本的产物；
+        // 首轮复用调用方已算好的向量，不重复 embed、不重复计量
+        return knowledgeRagOrchestrator.orchestrate(query, queryEmbedding, knowledgeBase, userId).candidates();
     }
 
     /**
@@ -589,7 +585,7 @@ public class ChatServiceImpl implements ChatService {
      *
      * <p>做什么：
      * <ol>
-     *   <li>系统提示明确“仅依据给定文档作答、无依据则固定拒答、引用必须使用 [1]..[3] 编号且禁止编造”。</li>
+     *   <li>系统提示明确“仅依据给定文档作答、无依据则固定拒答、引用必须使用 [1]..[N]（N 为实际片段数）编号且禁止编造”。</li>
      *   <li>按块顺序注入 [i] 编号 + 文件名 + 页码 + 正文，编号由后端统一分配。</li>
      *   <li>追加用户长期记忆区（独立 section、不编号），供个性化回答但不得作为文档依据。</li>
      *   <li>追加 Redis 记忆窗口内的多轮历史（时间正序、已按窗口裁剪）与当前改写后的问题。</li>
@@ -608,7 +604,8 @@ public class ChatServiceImpl implements ChatService {
         StringBuilder system = new StringBuilder(
                 "你只能根据提供的文档内容回答。\n"
                         + "如果文档没有相关信息，回答“文档中没有找到相关信息”。\n"
-                        + "引用必须使用系统提供的编号 [1]..[3]。\n"
+                        // 引用编号随实际注入片段数动态生成，避免固定 [1]..[3] 与实际片段数不一致
+                        + "引用必须使用系统提供的编号 [1]..[" + chunks.size() + "]。\n"
                         + "禁止自行生成不存在的编号。\n"
         );
         // 后端统一为检索块编号，模型只能引用这些编号

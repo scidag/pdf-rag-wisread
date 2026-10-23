@@ -9,7 +9,7 @@ import com.wisread.entity.Message;
 import com.wisread.entity.Project;
 import com.wisread.exception.ApiException;
 import com.wisread.model.ChunkSearchResult;
-import com.wisread.model.KnowledgeChunkSearchResult;
+import com.wisread.model.RetrievalOutcome;
 import com.wisread.repository.AnswerSourceRepository;
 import com.wisread.repository.ConversationRepository;
 import com.wisread.repository.DocumentRepository;
@@ -19,7 +19,7 @@ import com.wisread.service.ChatLogService;
 import com.wisread.service.CitationParsingService;
 import com.wisread.service.EmbeddingService;
 import com.wisread.service.KnowledgeBaseService;
-import com.wisread.service.KnowledgeVectorIndexingService;
+import com.wisread.service.KnowledgeRagOrchestrator;
 import com.wisread.service.QueryRewriteService;
 import com.wisread.service.RerankService;
 import com.wisread.service.TokenCounter;
@@ -49,8 +49,10 @@ import java.util.concurrent.atomic.AtomicLong;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyFloat;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyList;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
@@ -60,8 +62,10 @@ import static org.mockito.Mockito.when;
 
 /**
  * Chat 双链路单元测试（Mockito，不启动 Spring）：
- * 验证会话绑定独立知识库时走知识库检索链路（阈值过滤、rerank 截断、引用落库），
+ * 验证会话绑定独立知识库时走知识库检索链路（Agentic RAG 编排器唯一入口，agent 关闭时透传单轮结果），
  * 未绑定时保持原有项目检索链路不被调用改动。
+ * 阈值过滤/rerank 截断的检索口径行为已下沉到编排器 + KnowledgeRetrievalPipeline
+ * （见 KnowledgeRagOrchestratorTest / CandidateMergeTest），本测试聚焦 Chat 层接线与下游行为。
  * executor 以同步方式执行（Runnable::run），使异步问答流程在测试线程内完成。
  */
 @ExtendWith(MockitoExtension.class)
@@ -92,7 +96,7 @@ class ChatServiceImplKnowledgeBaseTest {
     private KnowledgeBaseService knowledgeBaseService;
 
     @Mock
-    private KnowledgeVectorIndexingService knowledgeVectorIndexingService;
+    private KnowledgeRagOrchestrator knowledgeRagOrchestrator;
 
     @Mock
     private RerankService rerankService;
@@ -143,7 +147,7 @@ class ChatServiceImplKnowledgeBaseTest {
                 embeddingService,
                 vectorIndexingService,
                 knowledgeBaseService,
-                knowledgeVectorIndexingService,
+                knowledgeRagOrchestrator,
                 rerankService,
                 queryRewriteService,
                 citationParsingService,
@@ -187,12 +191,23 @@ class ChatServiceImplKnowledgeBaseTest {
         knowledgeBase.setSimilarityThreshold(threshold);
         knowledgeBase.setRerankEnabled(rerankEnabled);
         knowledgeBase.setRerankK(rerankK);
+        knowledgeBase.setAgentEnabled(false);
         return knowledgeBase;
     }
 
-    private KnowledgeChunkSearchResult kbHit(long chunkId, long documentId, double distance) {
-        return new KnowledgeChunkSearchResult(
-                chunkId, documentId, "kb文档.pdf", "知识库片段" + chunkId, 2, 3, "页", distance);
+    private ChunkSearchResult hit(long chunkId, long documentId, double distance) {
+        return new ChunkSearchResult(chunkId, documentId, "kb文档.pdf", "知识库片段" + chunkId, 2, 3, "页", distance);
+    }
+
+    // 编排器透传单轮结果（agent 关闭时与现状一致的形状）
+    private RetrievalOutcome singleRoundOutcome(List<ChunkSearchResult> candidates) {
+        return new RetrievalOutcome(candidates, 1, null, null, List.of());
+    }
+
+    private void stubOrchestrate(List<ChunkSearchResult> candidates) {
+        when(knowledgeRagOrchestrator.orchestrate(eq("改写后的问题"), any(float[].class),
+                any(KnowledgeBase.class), eq(USER_ID)))
+                .thenReturn(singleRoundOutcome(candidates));
     }
 
     private void stubQuestionFlow(Conversation conversation) {
@@ -225,7 +240,7 @@ class ChatServiceImplKnowledgeBaseTest {
         chatService.ask(USER_ID, CONVERSATION_ID, new ChatRequest("问题"));
     }
 
-    // ===== Chat 双链路（SubTask 4.2）=====
+    // ===== Chat 双链路（绑库分支接入编排器后的接线验证）=====
 
     @Test
     void askWithKnowledgeBaseUsesKnowledgeRetrievalAndPersistsAnswerSource() {
@@ -235,17 +250,15 @@ class ChatServiceImplKnowledgeBaseTest {
                 1, 501L, 601L, "kb文档.pdf", 2, 3, "页", "知识库片段501")));
         when(knowledgeBaseService.findOwnedKnowledgeBase(USER_ID, KNOWLEDGE_BASE_ID))
                 .thenReturn(knowledgeBase(KnowledgeBase.STATUS_ACTIVE, 5, 0.8, true, 3));
-        when(knowledgeVectorIndexingService.searchKnowledgeChunks(
-                eq(USER_ID), eq(KNOWLEDGE_BASE_ID), any(), eq(5)))
-                .thenReturn(List.of(kbHit(501L, 601L, 0.1)));
+        stubOrchestrate(List.of(hit(501L, 601L, 0.1)));
 
         ask();
 
-        // 绑库会话：只走知识库检索，项目检索与通用 rerank 均不被调用
+        // 绑库会话：唯一检索入口是编排器，项目检索与通用 rerank 均不被调用
         verify(vectorIndexingService, never()).searchWithContent(any(), any(), any(), anyInt());
         verify(rerankService, never()).rerank(anyString(), anyList());
-        verify(knowledgeVectorIndexingService).searchKnowledgeChunks(
-                eq(USER_ID), eq(KNOWLEDGE_BASE_ID), any(), eq(5));
+        verify(knowledgeRagOrchestrator).orchestrate(
+                eq("改写后的问题"), any(float[].class), any(KnowledgeBase.class), eq(USER_ID));
 
         // 引用落库复用 AnswerSource：chunkId/documentId 为 knowledge_chunks.id / knowledge_documents.id
         ArgumentCaptor<AnswerSource> sourceCaptor = ArgumentCaptor.forClass(AnswerSource.class);
@@ -268,10 +281,10 @@ class ChatServiceImplKnowledgeBaseTest {
 
         ask();
 
-        // 回归验证：未绑库走项目检索 + rerank，知识库链路完全不被触碰
+        // 回归验证：未绑库走项目检索 + rerank，知识库编排链路完全不被触碰
         verify(vectorIndexingService).searchWithContent(eq(USER_ID), eq(PROJECT_ID), any(), eq(10));
         verify(knowledgeBaseService, never()).findOwnedKnowledgeBase(any(), any());
-        verify(knowledgeVectorIndexingService, never()).searchKnowledgeChunks(any(), any(), any(), anyInt());
+        verify(knowledgeRagOrchestrator, never()).orchestrate(anyString(), any(float[].class), any(), anyLong());
 
         ArgumentCaptor<AnswerSource> sourceCaptor = ArgumentCaptor.forClass(AnswerSource.class);
         verify(answerSourceRepository).insert(sourceCaptor.capture());
@@ -281,19 +294,15 @@ class ChatServiceImplKnowledgeBaseTest {
 
     @Test
     void knowledgeBaseThresholdFiltersDistantChunks() {
+        // 过滤口径行为已下沉到编排器 + 管线（KnowledgeRagOrchestratorTest 覆盖）；
+        // 此处验证 Chat 层把编排器输出的候选原样传给引用解析
         Conversation conversation = conversation(KNOWLEDGE_BASE_ID);
         stubQuestionFlow(conversation);
         stubAnswerStream("回答", List.of());
-        // similarityThreshold=0.8 → 距离阈值 0.2：0.1/0.05 保留，0.25/0.9 丢弃
         when(knowledgeBaseService.findOwnedKnowledgeBase(USER_ID, KNOWLEDGE_BASE_ID))
                 .thenReturn(knowledgeBase(KnowledgeBase.STATUS_ACTIVE, 10, 0.8, false, null));
-        when(knowledgeVectorIndexingService.searchKnowledgeChunks(
-                eq(USER_ID), eq(KNOWLEDGE_BASE_ID), any(), eq(10)))
-                .thenReturn(List.of(
-                        kbHit(501L, 601L, 0.1),
-                        kbHit(502L, 601L, 0.25),
-                        kbHit(503L, 602L, 0.05),
-                        kbHit(504L, 602L, 0.9)));
+        // 模拟编排器输出：阈值 0.2 内保留 0.1/0.05，0.25/0.9 已被过滤
+        stubOrchestrate(List.of(hit(501L, 601L, 0.1), hit(503L, 602L, 0.05)));
 
         ask();
 
@@ -309,18 +318,15 @@ class ChatServiceImplKnowledgeBaseTest {
 
     @Test
     void knowledgeBaseRerankKTruncatesCandidates() {
+        // 截断口径行为已下沉到编排器 + 管线（KnowledgeRagOrchestratorTest 覆盖）；
+        // 此处验证 Chat 层把编排器输出的截断结果原样传给引用解析
         Conversation conversation = conversation(KNOWLEDGE_BASE_ID);
         stubQuestionFlow(conversation);
         stubAnswerStream("回答", List.of());
-        // 阈值 0.5 内有 3 条命中，rerankK=2 只保留前 2 条（rerank 占位，不重排仅截断）
         when(knowledgeBaseService.findOwnedKnowledgeBase(USER_ID, KNOWLEDGE_BASE_ID))
                 .thenReturn(knowledgeBase(KnowledgeBase.STATUS_ACTIVE, 10, 0.5, true, 2));
-        when(knowledgeVectorIndexingService.searchKnowledgeChunks(
-                eq(USER_ID), eq(KNOWLEDGE_BASE_ID), any(), eq(10)))
-                .thenReturn(List.of(
-                        kbHit(501L, 601L, 0.1),
-                        kbHit(502L, 601L, 0.2),
-                        kbHit(503L, 602L, 0.3)));
+        // 模拟编排器输出：rerankK=2 只保留前 2 条
+        stubOrchestrate(List.of(hit(501L, 601L, 0.1), hit(502L, 601L, 0.2)));
 
         ask();
 
@@ -341,8 +347,8 @@ class ChatServiceImplKnowledgeBaseTest {
 
         ask();
 
-        // 越权时归属校验先行拦截：知识库检索与项目检索均不执行
-        verify(knowledgeVectorIndexingService, never()).searchKnowledgeChunks(any(), any(), any(), anyInt());
+        // 越权时归属校验先行拦截：编排器与项目检索均不执行
+        verify(knowledgeRagOrchestrator, never()).orchestrate(anyString(), any(float[].class), any(), anyLong());
         verify(vectorIndexingService, never()).searchWithContent(any(), any(), any(), anyInt());
         verify(chatModel, never()).stream(any(Prompt.class));
     }
@@ -356,14 +362,12 @@ class ChatServiceImplKnowledgeBaseTest {
         // ARCHIVED 归档库放行：既有绑定会话可继续问答
         when(knowledgeBaseService.findOwnedKnowledgeBase(USER_ID, KNOWLEDGE_BASE_ID))
                 .thenReturn(knowledgeBase(KnowledgeBase.STATUS_ARCHIVED, 5, 0.8, false, null));
-        when(knowledgeVectorIndexingService.searchKnowledgeChunks(
-                eq(USER_ID), eq(KNOWLEDGE_BASE_ID), any(), eq(5)))
-                .thenReturn(List.of(kbHit(501L, 601L, 0.1)));
+        stubOrchestrate(List.of(hit(501L, 601L, 0.1)));
 
         ask();
 
-        verify(knowledgeVectorIndexingService).searchKnowledgeChunks(
-                eq(USER_ID), eq(KNOWLEDGE_BASE_ID), any(), eq(5));
+        verify(knowledgeRagOrchestrator).orchestrate(
+                eq("改写后的问题"), any(float[].class), any(KnowledgeBase.class), eq(USER_ID));
         ArgumentCaptor<AnswerSource> sourceCaptor = ArgumentCaptor.forClass(AnswerSource.class);
         verify(answerSourceRepository).insert(sourceCaptor.capture());
         assertThat(sourceCaptor.getValue().getChunkId()).isEqualTo(501L);
@@ -373,12 +377,10 @@ class ChatServiceImplKnowledgeBaseTest {
     void knowledgeBaseRetrievalRejectsWhenAllChunksBelowThreshold() {
         Conversation conversation = conversation(KNOWLEDGE_BASE_ID);
         stubQuestionFlow(conversation);
-        // similarityThreshold=0.8（距离阈值 0.2），全部命中距离过大 → 触发拒答文案
+        // 编排器输出空候选（阈值 0.2 内无命中）→ 触发拒答文案
         when(knowledgeBaseService.findOwnedKnowledgeBase(USER_ID, KNOWLEDGE_BASE_ID))
                 .thenReturn(knowledgeBase(KnowledgeBase.STATUS_ACTIVE, 5, 0.8, false, null));
-        when(knowledgeVectorIndexingService.searchKnowledgeChunks(
-                eq(USER_ID), eq(KNOWLEDGE_BASE_ID), any(), eq(5)))
-                .thenReturn(List.of(kbHit(501L, 601L, 0.9)));
+        stubOrchestrate(List.of());
 
         ask();
 
