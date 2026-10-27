@@ -11,13 +11,15 @@ import type {
 
 interface ApiFetchOptions extends RequestInit {
   asBlob?: boolean;
+  /** 下载进度回调（仅 asBlob 且响应带 Content-Length 时 total 可用，否则为 0） */
+  onProgress?: (loaded: number, total: number) => void;
 }
 
 export async function apiFetch<T>(
   path: string,
   options: ApiFetchOptions = {}
 ): Promise<T> {
-  const { asBlob = false, ...request } = options;
+  const { asBlob = false, onProgress, ...request } = options;
   const headers = new Headers(request.headers);
   const token = getAccessToken();
   if (token) {
@@ -57,7 +59,38 @@ export async function apiFetch<T>(
   if (response.status === 204) {
     return undefined as T;
   }
-  return (asBlob ? response.blob() : response.json()) as Promise<T>;
+  if (asBlob) {
+    if (onProgress && response.body) {
+      return (await readBlobWithProgress(response, onProgress)) as T;
+    }
+    return response.blob() as Promise<T>;
+  }
+  return response.json() as Promise<T>;
+}
+
+/**
+ * 流式读取二进制响应并在每片到达时回调进度，最终合并为 Blob。
+ * 大文件（如几十 MB 的 docx）在 1Mbps 出口带宽下下载可能长达分钟级，
+ * 必须让用户看到「已下载 x MB / 共 y MB」而不是无反馈的转圈。
+ */
+export async function readBlobWithProgress(
+  response: Response,
+  onProgress: (loaded: number, total: number) => void
+): Promise<Blob> {
+  const total = Number(response.headers.get("Content-Length") ?? 0);
+  const reader = response.body!.getReader();
+  const chunks: BlobPart[] = [];
+  let loaded = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    if (value) {
+      chunks.push(value as unknown as BlobPart);
+      loaded += value.length;
+      onProgress(loaded, total);
+    }
+  }
+  return new Blob(chunks);
 }
 
 export function getMe() {
@@ -122,8 +155,28 @@ export function getDocument(documentId: number) {
   return apiFetch<Document>(`/documents/${documentId}`);
 }
 
-export function getDocumentContent(documentId: number) {
-  return apiFetch<Blob>(`/documents/${documentId}/content`, { asBlob: true });
+/**
+ * 文档内容会话级缓存：同一 documentId 的原始文件内容不可变（删除后 ID 不复用），
+ * 下载过一次后本会话内再次预览直接复用，连协商缓存的往返都省掉。
+ * 条目数以文档数上限为界（每项目 5 篇），无需淘汰策略。
+ */
+const documentContentCache = new Map<number, Blob>();
+
+export async function getDocumentContent(
+  documentId: number,
+  onProgress?: (loaded: number, total: number) => void
+): Promise<Blob> {
+  const cached = documentContentCache.get(documentId);
+  if (cached) {
+    onProgress?.(cached.size, cached.size);
+    return cached;
+  }
+  const blob = await apiFetch<Blob>(`/documents/${documentId}/content`, {
+    asBlob: true,
+    onProgress
+  });
+  documentContentCache.set(documentId, blob);
+  return blob;
 }
 
 export function uploadDocument(file: File, projectId: number) {

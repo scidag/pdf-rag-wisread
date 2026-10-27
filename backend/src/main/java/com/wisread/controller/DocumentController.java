@@ -5,6 +5,10 @@ import com.wisread.model.DocumentType;
 import com.wisread.service.DocumentService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.core.io.InputStreamResource;
+import org.springframework.core.io.Resource;
+import org.springframework.http.CacheControl;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -13,11 +17,14 @@ import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.time.Duration;
+import java.time.Instant;
 import java.util.List;
 
 /**
@@ -31,6 +38,13 @@ import java.util.List;
 public class DocumentController {
 
     private static final Logger log = LoggerFactory.getLogger(DocumentController.class);
+
+    /**
+     * 文档内容的浏览器缓存策略：同一 documentId 的内容不可变（无更新端点，删除后 ID 不复用），
+     * 私有长缓存一天，避免大文件在 1Mbps 带宽下重复整段下载。
+     */
+    private static final CacheControl CONTENT_CACHE_CONTROL =
+            CacheControl.maxAge(Duration.ofDays(1)).cachePrivate();
 
     private final DocumentService documentService;
 
@@ -95,21 +109,47 @@ public class DocumentController {
     }
 
     /** GET /api/v1/documents/{documentId}/content：获取原始文件供前端预览或下载。
-     * 入参：路径变量 documentId（文档 ID），当前登录用户由 Authentication 解析得到。
-     * 业务含义：校验归属后返回 MinIO 中的原始文件字节。
-     * 返回：200 OK 及对应文档类型的文件内容。 */
+     * 入参：路径变量 documentId（文档 ID）、可选请求头 If-None-Match（协商缓存），当前登录用户由 Authentication 解析得到。
+     * 业务含义：校验归属后以流式返回 MinIO 中的原始文件（不整体载入堆内存）；
+     * 携带 ETag 与 Cache-Control，浏览器命中缓存时直接 304，避免大文件重复整段传输。
+     * 返回：200 OK 流式文件内容，或 304 Not Modified。 */
     @GetMapping("/{documentId}/content")
-    public ResponseEntity<byte[]> content(
+    public ResponseEntity<Resource> content(
             @PathVariable Long documentId,
+            @RequestHeader(value = HttpHeaders.IF_NONE_MATCH, required = false) String ifNoneMatch,
             Authentication authentication
     ) {
         Long userId = (Long) authentication.getPrincipal();
-        DocumentType documentType = DocumentType.fromValueOrDefault(
-                documentService.get(userId, documentId).fileType()
-        );
-        return ResponseEntity.ok()
+        DocumentResponse meta = documentService.get(userId, documentId);
+        String etag = contentEtag(meta.id(), meta.updatedAt(), meta.fileSize());
+        if (ifNoneMatch != null && ifNoneMatch.contains(etag)) {
+            log.info("文档预览命中协商缓存 userId={} documentId={}", userId, documentId);
+            return ResponseEntity.status(HttpStatus.NOT_MODIFIED)
+                    .eTag(etag)
+                    .cacheControl(CONTENT_CACHE_CONTROL)
+                    .build();
+        }
+        DocumentType documentType = DocumentType.fromValueOrDefault(meta.fileType());
+        DocumentService.DocumentContent content = documentService.openContent(userId, documentId);
+        log.info("返回项目文档预览 userId={} documentId={} size={}B contentType={}",
+                userId, documentId, content.size(), documentType.contentType());
+        ResponseEntity.BodyBuilder builder = ResponseEntity.ok()
                 .contentType(MediaType.parseMediaType(documentType.contentType()))
-                .body(documentService.getContent(userId, documentId));
+                .eTag(etag)
+                .cacheControl(CONTENT_CACHE_CONTROL);
+        if (content.size() >= 0) {
+            builder.contentLength(content.size());
+        }
+        return builder.body(new InputStreamResource(content.stream()));
+    }
+
+    /** 由文档元数据生成内容 ETag（id + updatedAt + fileSize；同一文档内容不可变）。 */
+    private static String contentEtag(Long documentId, Instant updatedAt, Long fileSize) {
+        return "\"doc-%d-%d-%d\"".formatted(
+                documentId,
+                updatedAt == null ? 0L : updatedAt.toEpochMilli(),
+                fileSize == null ? -1L : fileSize
+        );
     }
 
     /** DELETE /api/v1/documents/{documentId}：删除文档接口。

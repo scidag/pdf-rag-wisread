@@ -16,6 +16,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.test.util.ReflectionTestUtils;
 
+import java.io.ByteArrayInputStream;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -186,18 +187,23 @@ class DocumentServiceTest {
     }
 
     @Test
-    void getContentReadsOwnedDocumentPdf() {
+    void getContentReadsOwnedDocumentPdf() throws Exception {
         Document document = new Document();
         document.setUserId(USER_ID);
         document.setFileKey("1/preview.pdf");
         when(documentRepository.findByUserIdAndId(USER_ID, 10L))
                 .thenReturn(Optional.of(document));
-        when(minioStorageService.getObject("1/preview.pdf")).thenReturn(new byte[]{1, 2, 3});
+        when(minioStorageService.openObject("1/preview.pdf")).thenReturn(
+                new MinioStorageService.StoredObject(
+                        new ByteArrayInputStream(new byte[]{1, 2, 3}), 3L
+                )
+        );
 
-        byte[] content = documentService.getContent(USER_ID, 10L);
+        DocumentService.DocumentContent content = documentService.openContent(USER_ID, 10L);
 
-        assertThat(content).containsExactly(1, 2, 3);
-        verify(minioStorageService).getObject("1/preview.pdf");
+        assertThat(content.size()).isEqualTo(3L);
+        assertThat(content.stream().readAllBytes()).containsExactly(1, 2, 3);
+        verify(minioStorageService).openObject("1/preview.pdf");
     }
 
     @Test

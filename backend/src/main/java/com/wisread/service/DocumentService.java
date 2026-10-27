@@ -3,6 +3,8 @@ package com.wisread.service;
 import com.wisread.dto.DocumentResponse;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.io.IOException;
+import java.io.InputStream;
 import java.util.List;
 
 /**
@@ -54,13 +56,26 @@ public interface DocumentService {
     DocumentResponse get(Long userId, Long documentId);
 
     /**
-     * 读取文档原始文件内容（用于预览或下载）。
+     * 打开的文档原始文件流及大小（字节）。
+     * 流式读取避免大文件整体载入堆内存；响应写完后由 Spring 框架负责关闭流。
+     */
+    record DocumentContent(InputStream stream, long size) implements AutoCloseable {
+        @Override
+        public void close() throws IOException {
+            if (stream != null) {
+                stream.close();
+            }
+        }
+    }
+
+    /**
+     * 打开文档原始文件流（用于预览或下载，流式返回不整体载入内存）。
      *
      * @param userId      当前用户 ID
      * @param documentId  文档 ID
-     * @return 原始文件字节
+     * @return 文件流与大小
      */
-    byte[] getContent(Long userId, Long documentId);
+    DocumentContent openContent(Long userId, Long documentId);
 
     /**
      * 删除文档：同时删除 MinIO 对象与文档元数据。

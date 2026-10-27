@@ -1,5 +1,6 @@
 import { API_BASE } from "./config";
 import { getAccessToken, restoreSession } from "./auth-store";
+import { readBlobWithProgress } from "./api";
 
 /* ---------- 类型（对齐 KnowledgeBaseResponse / KnowledgeDocumentResponse / KnowledgeDocumentBatchItemResponse） ---------- */
 
@@ -205,13 +206,27 @@ export function deleteKnowledgeDocument(documentId: number) {
 }
 
 /**
+ * 知识库文档内容会话级缓存：同一 documentId 的原始文件内容不可变（重新解析不改动原始文件，
+ * 删除后 ID 不复用），下载过一次后本会话内再次预览直接复用。
+ */
+const knowledgeContentCache = new Map<number, Blob>();
+
+/**
  * 获取知识库文档原始内容（Blob），用于前端预览。
  * 二进制响应不走 kbFetch（其按 JSON 解析会报"服务响应异常"），
- * 自行处理鉴权头与 401 刷新重试，与 kbFetch 行为对齐。
+ * 自行处理鉴权头与 401 刷新重试，与 kbFetch 行为对齐；
+ * 流式读取并通过 onProgress 回调下载进度，命中会话缓存时同步返回。
  */
 export async function getKnowledgeDocumentContent(
-  documentId: number
+  documentId: number,
+  onProgress?: (loaded: number, total: number) => void
 ): Promise<Blob> {
+  const cached = knowledgeContentCache.get(documentId);
+  if (cached) {
+    onProgress?.(cached.size, cached.size);
+    return cached;
+  }
+
   const request = async (): Promise<Response> => {
     const headers = new Headers();
     const token = getAccessToken();
@@ -233,7 +248,11 @@ export async function getKnowledgeDocumentContent(
     const error = await response.json().catch(() => null);
     throw new Error(error?.message ?? `请求失败（HTTP ${response.status}），请稍后重试`);
   }
-  return response.blob();
+  const blob = await (onProgress && response.body
+    ? readBlobWithProgress(response, onProgress)
+    : response.blob());
+  knowledgeContentCache.set(documentId, blob);
+  return blob;
 }
 
 /* ---------- 检索配置 / RAG 测试 / 切片（对齐 KnowledgeRetrievalConfig* / KnowledgeRetrievalTestResponse / KnowledgeChunk*） ---------- */

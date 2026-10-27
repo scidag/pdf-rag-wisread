@@ -8,6 +8,10 @@ import com.wisread.service.KnowledgeDocumentService;
 import com.wisread.model.DocumentType;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.core.io.InputStreamResource;
+import org.springframework.core.io.Resource;
+import org.springframework.http.CacheControl;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -16,10 +20,13 @@ import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.time.Duration;
+import java.time.Instant;
 import java.util.List;
 
 /**
@@ -35,6 +42,13 @@ import java.util.List;
 public class KnowledgeDocumentController {
 
     private static final Logger log = LoggerFactory.getLogger(KnowledgeDocumentController.class);
+
+    /**
+     * 文档内容的浏览器缓存策略：同一文档 ID 的内容不可变（重新解析不改动原始文件，删除后 ID 不复用），
+     * 私有长缓存一天，避免大文件在 1Mbps 带宽下重复整段下载。
+     */
+    private static final CacheControl CONTENT_CACHE_CONTROL =
+            CacheControl.maxAge(Duration.ofDays(1)).cachePrivate();
 
     private final KnowledgeDocumentService knowledgeDocumentService;
 
@@ -102,21 +116,46 @@ public class KnowledgeDocumentController {
 
     /**
      * GET /api/v1/knowledge-documents/{id}/content：文档原始内容预览接口。
-     * 校验归属后返回文件字节流，Content-Type 按文档类型设置，前端内联渲染预览。
+     * 校验归属后以流式返回文件字节（不整体载入堆内存），Content-Type 按文档类型设置；
+     * 携带 ETag 与 Cache-Control，浏览器命中缓存时直接 304，避免大文件重复整段传输。
      */
     @GetMapping("/api/v1/knowledge-documents/{id}/content")
-    public ResponseEntity<byte[]> content(
+    public ResponseEntity<Resource> content(
             @PathVariable Long id,
+            @RequestHeader(value = HttpHeaders.IF_NONE_MATCH, required = false) String ifNoneMatch,
             Authentication authentication
     ) {
         Long userId = (Long) authentication.getPrincipal();
-        DocumentType documentType = DocumentType.fromValueOrDefault(
-                knowledgeDocumentService.get(userId, id).fileType()
-        );
-        log.info("预览知识库文档 userId={} documentId={} contentType={}", userId, id, documentType.contentType());
-        return ResponseEntity.ok()
+        KnowledgeDocumentResponse meta = knowledgeDocumentService.get(userId, id);
+        String etag = contentEtag(meta.id(), meta.updatedAt(), meta.fileSize());
+        if (ifNoneMatch != null && ifNoneMatch.contains(etag)) {
+            log.info("知识库文档预览命中协商缓存 userId={} documentId={}", userId, id);
+            return ResponseEntity.status(HttpStatus.NOT_MODIFIED)
+                    .eTag(etag)
+                    .cacheControl(CONTENT_CACHE_CONTROL)
+                    .build();
+        }
+        DocumentType documentType = DocumentType.fromValueOrDefault(meta.fileType());
+        KnowledgeDocumentService.DocumentContent content = knowledgeDocumentService.openContent(userId, id);
+        log.info("返回知识库文档预览 userId={} documentId={} size={}B contentType={}",
+                userId, id, content.size(), documentType.contentType());
+        ResponseEntity.BodyBuilder builder = ResponseEntity.ok()
                 .contentType(MediaType.parseMediaType(documentType.contentType()))
-                .body(knowledgeDocumentService.getContent(userId, id));
+                .eTag(etag)
+                .cacheControl(CONTENT_CACHE_CONTROL);
+        if (content.size() >= 0) {
+            builder.contentLength(content.size());
+        }
+        return builder.body(new InputStreamResource(content.stream()));
+    }
+
+    /** 由文档元数据生成内容 ETag（id + updatedAt + fileSize；同一文档原始文件不可变）。 */
+    private static String contentEtag(Long documentId, Instant updatedAt, Long fileSize) {
+        return "\"kdoc-%d-%d-%d\"".formatted(
+                documentId,
+                updatedAt == null ? 0L : updatedAt.toEpochMilli(),
+                fileSize == null ? -1L : fileSize
+        );
     }
 
     /** POST /api/v1/knowledge-documents/{id}/reparse：重新解析知识库文档。

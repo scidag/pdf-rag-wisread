@@ -6,6 +6,8 @@ import com.wisread.dto.KnowledgeDocumentResponse;
 import com.wisread.entity.KnowledgeDocument;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.io.IOException;
+import java.io.InputStream;
 import java.util.List;
 
 /**
@@ -48,10 +50,23 @@ public interface KnowledgeDocumentService {
     KnowledgeDocumentResponse get(Long userId, Long documentId);
 
     /**
-     * 获取文档原始字节内容（用于前端预览）。
-     * 校验归属后从对象存储读取文件字节。
+     * 打开的文档原始文件流及大小（字节）。
+     * 流式读取避免大文件整体载入堆内存；响应写完后由 Spring 框架负责关闭流。
      */
-    byte[] getContent(Long userId, Long documentId);
+    record DocumentContent(InputStream stream, long size) implements AutoCloseable {
+        @Override
+        public void close() throws IOException {
+            if (stream != null) {
+                stream.close();
+            }
+        }
+    }
+
+    /**
+     * 打开文档原始文件流（用于前端预览，流式返回不整体载入内存）。
+     * 校验归属后从对象存储打开文件流。
+     */
+    DocumentContent openContent(Long userId, Long documentId);
 
     /**
      * 重新解析文档：清理旧向量、retryCount 清零、状态复位 UPLOADED 并重新触发异步处理（202 语义）。

@@ -112,6 +112,12 @@ export default function KnowledgeBaseDetailPage() {
     blob: Blob;
   } | null>(null);
   const [previewingId, setPreviewingId] = useState<number | null>(null);
+  // 预览下载进度（大文件在 1Mbps 带宽下耗时分钟级，必须给用户可见反馈）
+  const [previewProgress, setPreviewProgress] = useState<{
+    id: number;
+    loaded: number;
+    total: number;
+  } | null>(null);
 
   const singleInputRef = useRef<HTMLInputElement>(null);
   const batchInputRef = useRef<HTMLInputElement>(null);
@@ -298,14 +304,18 @@ export default function KnowledgeBaseDetailPage() {
   // 预览：拉取原始文件 blob，交由 DocumentPreview 按类型客户端渲染（与项目侧交互一致）
   async function handlePreview(doc: KnowledgeDocument) {
     setPreviewingId(doc.id);
+    setPreviewProgress({ id: doc.id, loaded: 0, total: doc.fileSize ?? 0 });
     setActionError(null);
     try {
-      const blob = await getKnowledgeDocumentContent(doc.id);
+      const blob = await getKnowledgeDocumentContent(doc.id, (loaded, total) => {
+        setPreviewProgress({ id: doc.id, loaded, total: total || doc.fileSize || 0 });
+      });
       setPreview({ doc, blob });
     } catch (err) {
       setActionError(err instanceof Error ? err.message : "预览失败，请稍后重试");
     } finally {
       setPreviewingId(null);
+      setPreviewProgress(null);
     }
   }
 
@@ -609,7 +619,18 @@ export default function KnowledgeBaseDetailPage() {
                             : doc.tokenCount.toLocaleString()}
                         </td>
                         <td className="border-b border-border px-[18px] py-[14px] font-mono text-[0.78rem] text-[rgba(190,215,245,0.75)] whitespace-nowrap">
-                          {formatBytes(doc.fileSize)}
+                          {previewProgress?.id === doc.id ? (
+                            <span className="text-[#8ab4ff]">
+                              下载中 {formatBytes(previewProgress.loaded)}
+                              {previewProgress.total > 0
+                                ? ` / ${formatBytes(previewProgress.total)}（${Math.round(
+                                    (previewProgress.loaded / previewProgress.total) * 100
+                                  )}%）`
+                                : ""}
+                            </span>
+                          ) : (
+                            formatBytes(doc.fileSize)
+                          )}
                         </td>
                         <td className="border-b border-border px-[18px] py-[14px] font-mono text-[0.78rem] text-[rgba(160,185,225,0.6)] whitespace-nowrap">
                           {formatDate(doc.createdAt)}

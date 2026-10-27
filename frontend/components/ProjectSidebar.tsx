@@ -52,6 +52,12 @@ export default function ProjectSidebar({
     blob: Blob;
   } | null>(null);
   const [previewingId, setPreviewingId] = useState<number | null>(null);
+  // 预览下载进度（大文件在 1Mbps 带宽下耗时分钟级，必须给用户可见反馈）
+  const [previewProgress, setPreviewProgress] = useState<{
+    id: number;
+    loaded: number;
+    total: number;
+  } | null>(null);
   const [previewError, setPreviewError] = useState<string | null>(null);
 
   function closePreview() {
@@ -60,9 +66,12 @@ export default function ProjectSidebar({
 
   async function handlePreview(document: Document) {
     setPreviewingId(document.id);
+    setPreviewProgress({ id: document.id, loaded: 0, total: document.fileSize ?? 0 });
     setPreviewError(null);
     try {
-      const blob = await getDocumentContent(document.id);
+      const blob = await getDocumentContent(document.id, (loaded, total) => {
+        setPreviewProgress({ id: document.id, loaded, total: total || document.fileSize || 0 });
+      });
       setPreview({ document, blob });
     } catch (err) {
       setPreviewError(
@@ -70,6 +79,7 @@ export default function ProjectSidebar({
       );
     } finally {
       setPreviewingId(null);
+      setPreviewProgress(null);
     }
   }
 
@@ -160,12 +170,25 @@ export default function ProjectSidebar({
                       {document.filename}
                     </div>
                     <div className="mt-[3px] font-mono text-[0.6rem] text-[rgba(150,185,235,0.4)]">
-                      {document.pageCount
-                        ? `${formatDocumentCount(document.fileType, document.pageCount)} · `
-                        : ""}
-                      {document.fileSize
-                        ? `${(document.fileSize / 1024 / 1024).toFixed(1)} MB`
-                        : ""}
+                      {previewProgress?.id === document.id ? (
+                        <span className="text-[rgba(130,185,255,0.9)]">
+                          下载中 {(previewProgress.loaded / 1024 / 1024).toFixed(1)} MB
+                          {previewProgress.total > 0
+                            ? ` / ${(previewProgress.total / 1024 / 1024).toFixed(1)} MB（${Math.round(
+                                (previewProgress.loaded / previewProgress.total) * 100
+                              )}%）`
+                            : ""}
+                        </span>
+                      ) : (
+                        <>
+                          {document.pageCount
+                            ? `${formatDocumentCount(document.fileType, document.pageCount)} · `
+                            : ""}
+                          {document.fileSize
+                            ? `${(document.fileSize / 1024 / 1024).toFixed(1)} MB`
+                            : ""}
+                        </>
+                      )}
                     </div>
                   </div>
                   <StatusBadge status={document.status} />

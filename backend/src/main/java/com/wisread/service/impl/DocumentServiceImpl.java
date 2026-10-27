@@ -178,8 +178,12 @@ public class DocumentServiceImpl implements DocumentService {
     }
 
     @Transactional(readOnly = true)
-    public byte[] getContent(Long userId, Long documentId) {
-        return minioStorageService.getObject(findOwnedDocument(userId, documentId).getFileKey());
+    public DocumentContent openContent(Long userId, Long documentId) {
+        // 归属校验后打开 MinIO 对象流，供控制器流式返回（避免大文件整体载入堆内存）
+        Document document = findOwnedDocument(userId, documentId);
+        MinioStorageService.StoredObject stored = minioStorageService.openObject(document.getFileKey());
+        log.info("打开项目文档文件流 userId={} documentId={} size={}B", userId, documentId, stored.size());
+        return new DocumentContent(stored.stream(), stored.size());
     }
 
     /**

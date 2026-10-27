@@ -5,6 +5,7 @@ import com.wisread.service.MinioStorageService;
 import com.wisread.config.WisreadMinioProperties;
 import io.minio.BucketExistsArgs;
 import io.minio.GetObjectArgs;
+import io.minio.GetObjectResponse;
 import io.minio.MakeBucketArgs;
 import io.minio.MinioClient;
 import io.minio.PutObjectArgs;
@@ -107,4 +108,33 @@ public class MinioStorageServiceImpl implements MinioStorageService {
             throw new IllegalStateException("failed to read object from MinIO", exception);
         }
     }
-}
+
+    /**
+     * 按 fileKey 打开对象流（不整体读入内存）。
+     * 大小取自 MinIO 响应头 Content-Length（整对象 GET 必带），解析失败时置 -1 由上层按未知长度处理。
+     * 流由调用方在响应写完后关闭（Spring 对 Resource 响应体自动关闭）。
+     */
+    public StoredObject openObject(String key) {
+        try {
+            GetObjectResponse response = minioClient.getObject(
+                    GetObjectArgs.builder()
+                            .bucket(properties.getBucket())
+                            .object(key)
+                            .build()
+            );
+            long size = -1L;
+            String contentLength = response.headers().get("Content-Length");
+            if (contentLength != null) {
+                try {
+                    size = Long.parseLong(contentLength);
+                } catch (NumberFormatException ignored) {
+                    // 保持 -1，按未知长度处理
+                }
+            }
+            return new StoredObject(response, size);
+        } catch (Exception exception) {
+            throw new IllegalStateException("failed to open object from MinIO", exception);
+        }
+    }
+}
+
